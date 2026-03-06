@@ -1,0 +1,5 @@
+# Additional sources for lora_mesh_projesi
+# Included by the auto-generated OMNeT++ Makefile via: -include makefrag
+
+# NOTE: SensorLoRaApp.o is already included in the generated Makefile's OBJS.
+# Adding it again here causes duplicate symbols at link time.

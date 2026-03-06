@@ -1,0 +1,98 @@
+# =============================================================================
+# .gitignore — Self-Healing Hybrid LoRa Gateway (OMNeT++ / INET / FLoRa)
+# Eren ERDEM (2020502028) — Melisa KURAL (2021502041) — DEÜ EEE
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# OMNeT++ Derleme Çıktıları
+# -----------------------------------------------------------------------------
+out/
+*.o
+*.a
+*.so
+*.so.*
+*.dll
+*.dylib
+
+# Proje binary'leri (debug/release)
+lora_mesh_projesi_dbg
+lora_mesh_projesi
+lora_mesh_projesi_release
+*_dbg
+*_release
+
+# Makefile otomatik türetilen
+Makefile.inc
+
+# -----------------------------------------------------------------------------
+# OMNeT++ Simülasyon Sonuçları
+# -----------------------------------------------------------------------------
+results/
+*.sca
+*.vec
+*.vci
+*.log
+*.elog
+
+# Cmdenv log
+.cmdenv-log
+
+# Qtenv GUI ayarları (kullanıcıya özel)
+.qtenvrc
+
+# -----------------------------------------------------------------------------
+# OMNeT++ IDE (Eclipse CDT) — proje dosyaları
+# Bu dosyalar IDE'ye özel olduğundan isteğe bağlı track edilebilir.
+# Simülasyonun çalışması için GEREKLİ DEĞİL.
+# -----------------------------------------------------------------------------
+# .project         ← track ediyoruz (proje adı bilgisi)
+# .cproject        ← track ediyoruz (derleme konfigürasyonu)
+# .oppbuildspec    ← track ediyoruz (opp_makemake parametreleri)
+.settings/
+
+# -----------------------------------------------------------------------------
+# VS Code
+# -----------------------------------------------------------------------------
+.vscode/
+*.code-workspace
+
+# -----------------------------------------------------------------------------
+# PDF / Büyük dosyalar (Git LFS olmadan push edilmemeli)
+# Bitirme projesi PDF raporunu ayrı tutuyoruz (gizlilik + boyut)
+# -----------------------------------------------------------------------------
+*.pdf
+
+# -----------------------------------------------------------------------------
+# Python / Venv (analiz scriptleri için)
+# -----------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.venv/
+env/
+
+# -----------------------------------------------------------------------------
+# C++ derleme artıkları
+# -----------------------------------------------------------------------------
+*.d
+*.ii
+*.s
+
+# -----------------------------------------------------------------------------
+# Geçici / yedek dosyalar
+# -----------------------------------------------------------------------------
+*.bak
+*.tmp
+*.swp
+*.swo
+*~
+\#*\#
+.#*
+
+# -----------------------------------------------------------------------------
+# OS dosyaları
+# -----------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
