@@ -2,7 +2,7 @@
 # OMNeT++/OMNEST Makefile for lora_mesh_projesi
 #
 # This file was generated with the command:
-#  opp_makemake -f --deep -O out -KFLORA_PROJ=/home/eren/Desktop/bitirme_lora_kod/workspace/flora -KINET4_4_PROJ=/home/eren/Desktop/bitirme_lora_kod/workspace/inet4.4 -DINET_IMPORT -I. -I$$\(FLORA_PROJ\)/src -I$$\(INET4_4_PROJ\)/src -L$$\(FLORA_PROJ\)/src -L$$\(INET4_4_PROJ\)/src -lflora$$\(D\) -lINET$$\(D\)
+#  opp_makemake -f --deep -O out -KFLORA_PROJ=/home/eren/Desktop/bitirme_lora_kod/workspace/flora -KINET4_4_PROJ=/home/eren/Desktop/bitirme_lora_kod/workspace/inet4.4 -DINET_IMPORT -I. -I$(FLORA_PROJ)/src -I$(INET4_4_PROJ)/src -L$(FLORA_PROJ)/src -L$(INET4_4_PROJ)/src -lflora$(D) -lINET$(D)
 #
 
 # Name of target to be created (-o option)
@@ -33,10 +33,11 @@ PROJECTRELATIVE_PATH =
 O = $(PROJECT_OUTPUT_DIR)/$(CONFIGNAME)/$(PROJECTRELATIVE_PATH)
 
 # Object files for local .cc, .msg and .sm files
-OBJS = $O/SensorLoRaApp.o
+OBJS = $O/HybridRouting.o $O/MeshRouting.o $O/SensorLoRaApp.o $O/MeshPacket_m.o
 
 # Message files
-MSGFILES =
+MSGFILES = \
+    MeshPacket.msg
 
 # SM files
 SMFILES =

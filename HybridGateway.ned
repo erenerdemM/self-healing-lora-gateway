@@ -1,70 +1,66 @@
 // =============================================================================
-// HybridGateway — Hibrit LoRaWAN + Meshtastic Gateway
+// HybridGateway — Hibrit LoRaWAN + Mesh Gateway
 // =============================================================================
-// PDF (Bölüm 5.1, 2): "Standard Gateway" — LoRaWAN konsantratör (RAK5146/SX1303)
-//   VE Meshtastic mesh modülü (Heltec HT-CT62/SX1262) aynı donanım üzerinde.
-//
-// Görev:
-//   - EndNode'lardan LoRa paketleri alır (LoRaWAN PHY/MAC)
-//   - ONLINE modda : PacketForwarder → NetworkServer (doğrudan internet/WAN)
-//   - FAILOVER modda: PacketForwarder → MeshNode üzerinden → diğer HybridGateway
-//     → NetworkServer (Meshtastic G2G, Gateway-to-Gateway)
-//
-// Tüm gateway'ler bu aynı tiptedir. Fark sadece:
-//   - İnternet bağlantısı olup olmadığı (ini'de Ethernet bağlantısıyla modellenir)
-//   - Failover Agent'ın ONLINE/FAILOVER durum bilgisi (V2'de aktif)
-//
-// =============================================================================
-// V1 (Genel Tanım — ŞU AN AKTİF):
-//   FLoRa LoRaGW tabanlı. LoRa paketi alır, UDP/IP ile hedef adrese gönderir.
-//   Meshtastic mesh, V1'de Ethernet linki olarak simüle edilir.
-//   numEthInterfaces:
-//     1 → sadece mesh/WAN tarafı (internet yok, mesh üzerinden yönlendirme)
-//     2 → mesh tarafı + WAN/internet tarafı (internet var, NetworkServer'a bağlı)
-//
-// V2 (Gerçekçilik):
-//   - Local LNS (ChirpStack) entegrasyonu — AES-CMAC MIC, AES-CTR decrypt
-//   - Failover Agent state machine: ONLINE / FAILOVER / SELF_HEALING
-//   - Rlink(t) = α·(1-PLR) + β·RTT⁻¹  izleme (PDF Denklem 2.8)
-//   - τ_failover eşiği aşılınca mod geçişi
-//   - Meshtastic için ayrı SX1262 LoRa radyo + MeshtasticMedium eklenir
-//   - Ethernet mesh linki → Meshtastic radyo linki ile değiştirilir
-//
-// V3 (Ölçeklendirme):
-//   - Çoklu HybridGateway, WRR yük dengeleme
-//   - EWM ağırlık hesaplama: SCORE = w1·SNR - w2·HopCount + w3·Energy
-//   - Bottleneck tespiti: Q_size > Q_max → komşu GW uyandırma
-//   - QoS tag (2-bit): 00=Standart, 11=Kritik/Acil (PDF Denklem 2.9)
-//   - AES session key ile re-encryption (Ksession)
-//
 // Donanım (PDF Bölüm 5.1-5.2):
 //   Raspberry Pi CM4 (Lite, 2GB RAM)
-//   + RAK5146 (SX1303) mPCIe — LoRaWAN konsantratör
-//   + Heltec HT-CT62 (SX1262+ESP32-C3) — Meshtastic mesh modülü
+//   + RAK5146 (SX1303) mPCIe  — LoRaWAN konsantratör
+//   + Heltec HT-CT62 (SX1262+ESP32-C3) — Mesh radyo modülü
 //   + Quectel EG25-G (LTE Cat4) — hücresel yedek backhaul
-//   + Özel 2-katmanlı PCB, IP67 muhafaza
+//   Batarya: 3.7 V × 3500 mAh = 46 620 J (Li-ion)
+//
+// Sorumluluklar:
+//   - EndNode'lardan gelen LoRaWAN paketlerini alır
+//   - ONLINE: PacketForwarder → NetworkServer (doğrudan WAN)
+//   - FAILOVER: HybridRouting → en düşük maliyetli komşu → NetworkServer
+//     Maliyet: C_i = α·(P_tx/RSSI_i) + β·(Q_i/Q_max) + γ·H_i
+//   - Backhaul durumunu 100 ms periyotla denetler
+//   - Mesh paketi önceliği > sensör paketi (öncelik kuyruğu)
 // =============================================================================
 
 import flora.LoraNode.LoRaGW;
+import inet.power.storage.IdealEpEnergyStorage;
 
 module HybridGateway extends LoRaGW
 {
     parameters:
-        // Her topolojide tutarlı anten kulesi görünümü
         @display("i=device/antennatower;is=n");
 
-        // V1: 1 arayüz = sadece mesh/WAN (internet yok, Meshtastic mesh ile bağlı)
-        //     2 arayüz = mesh + internet/WAN (NetworkServer'a doğrudan bağlı)
-        // V2: +1 arayüz = Meshtastic SX1262 (ayrı LoRa medium üzerinden G2G)
-        // V3: +1 arayüz = LTE Cat4 (Quectel EG25-G, acil durum backhaul)
+        // Arayüz sayısı:
+        //   1 → yalnızca mesh/WAN tarafı (backhaul yok, yönlendirme yapılır)
+        //   2 → mesh + internet/WAN (NetworkServer'a doğrudan bağlı)
         numEthInterfaces = default(1);
 
-        // V2: Failover Agent parametreleri (şimdilik yorum satırı)
-        // double failoverThreshold = default(0.6);  // τ_failover (PDF Denklem 2.8)
-        // double alpha = default(0.7);               // PLR ağırlığı
-        // double beta  = default(0.3);               // RTT⁻¹ ağırlığı
+        // Batarya kapasitesi (IdealEpEnergyStorage: sonsuz kapasite, NodeStatus sorunu yok)
+        // TODO V2: Gerçek batarya için SimpleEpEnergyStorage + NodeStatus
+        energyStorage.nominalCapacity = default(46620J);
+        energyStorage.initialCapacity = default(46620J);
 
-        // V3: EWM yük dengeleme ağırlıkları
-        // double w1 = default(0.5);  // HopCount ağırlığı (PDF Tablo 2.2)
-        // double w2 = default(0.5);  // SNR ağırlığı
+        // ── Akıllı Yönlendirme Maliyet Fonksiyonu ────────────────────────
+        // C_i = α·(P_tx/RSSI_i) + β·(Q_i/Q_max) + γ·H_i   (α+β+γ = 1.0)
+        double alpha = default(0.4);   // Sinyal kalitesi ağırlığı  (RSSI)
+        double beta  = default(0.3);   // Kuyruk doluluk oranı ağırlığı
+        double gamma = default(0.3);   // Hop sayısı ağırlığı
+
+        // Darboğaz eşiği: Q_i >= congestionThreshold → 2. en iyi komşuya geç
+        double congestionThreshold = default(0.8);
+
+        // Backhaul kontrol periyodu
+        double backhaulCheckInterval @unit(s) = default(0.1s);
+
+        // Ajanına parametre iletimi
+        routingAgent.alpha                 = default(this.alpha);
+        routingAgent.beta                  = default(this.beta);
+        routingAgent.gamma                 = default(this.gamma);
+        routingAgent.congestionThreshold   = default(this.congestionThreshold);
+        routingAgent.backhaulCheckInterval = default(this.backhaulCheckInterval);
+
+    submodules:
+        // Enerji deposu — simülasyon boyunca tüketimi izler
+        energyStorage: IdealEpEnergyStorage {
+            @display("p=50,350");
+        }
+        // Akıllı yönlendirme ve komşu tablo ajanı
+        routingAgent: HybridRouting {
+            @display("p=160,350");
+        }
 }
