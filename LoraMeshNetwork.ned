@@ -3,55 +3,30 @@
 // =============================================================================
 // Proje: Kendi Kendini İyileştiren Hibrit LoRa Gateway Mimarisi
 //   Eren ERDEM (2020502028) — Melisa KURAL (2021502041)
-//   DEÜ EEE — Danışman: Prof. Dr. Damla GÜRKAN KUNTALP
+//   DEU EEE — Danışman: Prof. Dr. Damla GURKAN KUNTALP
 //
-// =============================================================================
-// ELEMANLAR (PDF mimarisinden):
-//   EndNode      : LoRaWAN IoT saha sensörü
-//   HybridGateway: LoRaWAN + Meshtastic kapasiteli gateway (tüm GW'ler aynı tip)
-//   MeshNode     : Meshtastic mesh relay düğümü (sadece G2G aktarma)
-//   NetworkServer: Bulut / yerel LNS (ChirpStack)
+// KESİN TOPOLOJİ:
 //
-// =============================================================================
-// V1 Topolojisi — Temel Mimari Doğrulaması (ŞU AN AKTİF):
+//   sensorGW1[0..4]  --[LoRa]--> hybridGW1 --[Eth]--> gwRouter1 --[Eth]--> networkServer
+//   sensorGW2[0..3]  --[LoRa]--> hybridGW2 --[Eth]--> gwRouter1
+//   sensorGW3[0..7]  --[LoRa]--> hybridGW3 --[Eth]--> gwRouter1
 //
-//   sensorNode1  --[LoRa, SF12]-->  hybridGW1  (internet YOK)
-//                                       |
-//                              [Mesh V1=Eth, 1Gbps]
-//                                       |
-//                                   meshNode1  (relay)
-//                                       |
-//                              [Mesh V1=Eth, 1Gbps]
-//                                       |
-//                                   hybridGW2  (internet VAR)
-//                                       |
-//                              [Ethernet WAN, 1Gbps]
-//                                       |
-//                                   networkServer  (LNS)
+//   Mesh zinciri (sendDirect beacon, kablo YOK):
+//     hybridGW1 <~beacon~> meshNode1 <~beacon~> meshNode2 <~beacon~> hybridGW2
+//                          meshNode1 <~beacon~> meshNode3 <~beacon~> meshNode4 <~beacon~> hybridGW3
 //
-// Hedef: DER=1.0, packetDropNoRouteFound=0, LoRa_ServerPacketReceived=10
-//
-// =============================================================================
-// V2 Topolojisi — Failover + Self-Healing:
-//
-//   NORMAL mod: hybridGW1 → [WAN] → networkServer (doğrudan)
-//   FAILOVER mod (Rlink < τ): hybridGW1 → [Meshtastic G2G] → meshNode1
-//                               → hybridGW2 → [WAN] → networkServer
-//   SELF-HEALING: bağlantı geri gelince NORMAL moda dönüş
-//   Yeni: meshtasticMedium + Failover Agent C++ state machine
-//
-// =============================================================================
-// V3 Topolojisi — Çok Düğümlü Mesh Ağı:
-//
-//   N×EndNode → M×HybridGateway → [Meshtastic mesh] → networkServer
-//   K×MeshNode (multi-hop relay zinciri), WRR + EWM yük dengeleme
-//   Bottleneck senaryosu, QoS tag istatistikleri
+//   KURAL:
+//     - GW <-> MeshNode: KESİNLİKLE kablo yok. Sadece sendDirect() beacon.
+//     - Backhaul (GW->gwRouter1->networkServer) kablolu.
+//     - Internet VARSA: GW sadece beacon gönderir, mesh'e sensör verisi yollamaz.
+//     - Internet GİDERSE: GW mesajı alır, en iyi GW'yi hedef gösterir, mesh'e aktarır.
 // =============================================================================
 
 import flora.LoRaPhy.LoRaMedium;
 import inet.networklayer.configurator.ipv4.Ipv4NetworkConfigurator;
 import inet.node.ethernet.Eth1G;
 import inet.node.inet.Router;
+import inet.physicallayer.wireless.ieee80211.packetlevel.Ieee80211ScalarRadioMedium;
 import EndNode;
 import HybridGateway;
 import MeshNode;
@@ -60,86 +35,105 @@ import NetworkServer;
 network LoraMeshNetwork
 {
     parameters:
-        @display("bgb=950,600");
+        @display("bgb=2200,2400");
 
     submodules:
 
         // ----- RF Ortam Motorları -----
-
-        // LoRaWAN fiziksel ortam: EndNode ↔ HybridGateway arası (868MHz, SF12)
-        // V2: meshtasticMedium eklenecek (HybridGateway ↔ MeshNode, ayrı frekans bandı)
         radioMedium: LoRaMedium {
-            @display("p=50,50;i=misc/sun;is=s");
+            @display("p=60,50;i=misc/sun;is=s");
+        }
+        wlanMedium: Ieee80211ScalarRadioMedium {
+            @display("p=220,50;i=misc/sun;is=s");
         }
 
-        // ----- Ağ Elemanları -----
-
-        // LoRaWAN IoT saha sensörü
-        // Donanım: STM32L476RG + E77-900M — 11B payload, SF12, 14dBm
-        sensorNode1: EndNode {
-            @display("p=100,380");
+        // ----- Sensör Grubu 1: hybridGW1'e bağlı 5 adet LoRaWAN sensör -----
+        // [0] max kuzey 400m  [1] max KD ~440m  [2] orta KB ~220m  [3] min doğu ~60m  [4] min güney ~65m
+        sensorGW1[5]: EndNode {
+            @display("p=200,400");
         }
 
-        // GW1: LoRaWAN birincil hibrit gateway — internet BAĞLANTISI YOK
-        //   EndNode'dan LoRa paketi alır.
-        //   V1: meshNode1 üzerinden hybridGW2'ye IP routing yapar.
-        //   V2: Failover Agent devreye girer, Meshtastic G2G aktif.
+        // ----- Sensör Grubu 2: hybridGW2'ye bağlı 4 adet LoRaWAN sensör -----
+        // [0] max doğu 400m  [1] max kuzey 400m  [2] orta KBat ~280m  [3] min ~70m
+        sensorGW2[4]: EndNode {
+            @display("p=1400,400");
+        }
+
+        // ----- Sensör Grubu 3: hybridGW3'e bağlı 8 adet LoRaWAN sensör -----
+        // [0] max güney 400m  [1] max batı 400m  [2] max GB ~390m
+        // [3] orta doğu ~206m  [4] orta KB ~241m  [7] orta KD ~270m
+        // [5] min ~61m  [6] min ~64m
+        sensorGW3[8]: EndNode {
+            @display("p=600,1600");
+        }
+
+        // ----- Hibrit Gateway'ler (backhaul Ethernet'i var) -----
+        // Yatay zincir: GW1(200,600)─400m─MN1(600,600)─400m─MN2(1000,600)─400m─GW2(1400,600)
         hybridGW1: HybridGateway {
             parameters:
-                numEthInterfaces = 1;  // sadece mesh tarafı
-                @display("p=300,220");
+                numEthInterfaces = 1;
+                @display("p=200,600;i=device/accesspoint");
+        }
+        hybridGW2: HybridGateway {
+            parameters:
+                numEthInterfaces = 1;
+                @display("p=1400,600;i=device/accesspoint");
+        }
+        // Düşey zincir: MN1(600,600)─400m─MN3(600,1000)─400m─MN4(600,1400)─400m─GW3(600,1800)
+        hybridGW3: HybridGateway {
+            parameters:
+                numEthInterfaces = 1;
+                @display("p=600,1800;i=device/accesspoint");
         }
 
-        // Meshtastic relay düğümü
-        //   V1: IP router (Ethernet bağlantılarıyla)
-        //   V2: SX1262 LoRa radyo + MeshtasticMedium ile gerçek mesh relay
+        // ----- Mesh Düğümleri (KABLOSUZ SADECE - kablo bağlantısı yok) -----
+        // meshNode1: yatay zincir (GW1↔MN2) ve düşey zincir (MN3) kavşak noktası
+        // meshNode2: meshNode1 ↔ hybridGW2  (yatay, +400m)
+        // meshNode3: meshNode1 ↔ meshNode4  (düşey, +400m)
+        // meshNode4: meshNode3 ↔ hybridGW3  (düşey, +400m)
         meshNode1: MeshNode {
             parameters:
-                numEthInterfaces = 2;  // [0]: hybridGW1, [1]: hybridGW2
-                @display("p=500,220");
+                @display("p=600,600");
+        }
+        meshNode2: MeshNode {
+            parameters:
+                @display("p=1000,600");
+        }
+        meshNode3: MeshNode {
+            parameters:
+                @display("p=600,1000");
+        }
+        meshNode4: MeshNode {
+            parameters:
+                @display("p=600,1400");
         }
 
-        // GW2: İnternet BAĞLANTISI OLAN hibrit gateway
-        //   V1: meshNode1'den gelen paketi networkServer'a yönlendirir.
-        //   NOT: LoRaGW tabanlı modüllerde INET 4.4 EthernetEncapsulation,
-        //        handleRegisterInterface zincirini lp-dispatcher'a iletmez.
-        //        Bu nedenle V1'de hybridGW2 IP relay rolü için INET Router
-        //        tabanlı gwRouter2 ile temsil edilir. HybridGateway rolü V2'de
-        //        tam olarak aktive edilecek (LoRa RX + Meshtastic alıcı).
-        //   V2: Meshtastic alıcı + LNS transmitter + QoS queue.
-        gwRouter2: Router {
-            @display("p=700,220");
+        // ----- Ağ Altyapısı (kablolu omurga) -----
+        gwRouter1: Router {
+            @display("p=1700,600");
         }
-
-        // Bulut / yerel LNS — NetworkServerApp (FLoRa) çalıştırır
-        //   V2: ChirpStack LNS simülatörü + duplicate detection
         networkServer: NetworkServer {
             parameters:
                 numEthInterfaces = 1;
                 numApps = 1;
-                @display("p=870,220");
+                @display("p=1900,600");
         }
-
-        // ----- Altyapı -----
-
-        // Otomatik IP adresleme + statik routing
-        //   Her Ethernet linki ayrı /30 subnet alır.
-        //   hybridGW1 → meshNode1 → hybridGW2 → networkServer route zinciri otomatik
         configurator: Ipv4NetworkConfigurator {
             parameters:
                 assignDisjunctSubnetAddresses = true;
-                @display("p=50,150;is=vs");
+                @display("p=60,980;is=vs");
         }
 
-    connections:
+    connections allowunconnected:
 
-        // hybridGW1 → meshNode1  (Meshtastic G2G, V1'de Ethernet ile simüle)
-        hybridGW1.ethg++ <--> Eth1G <--> meshNode1.ethg++;
+        // === BACKHAUL (Kablolu) ===
+        // Her HybridGateway doğrudan gwRouter1'e bağlı
+        hybridGW1.ethg++ <--> Eth1G <--> gwRouter1.ethg++;   // GW1 -> router eth[0]
+        hybridGW2.ethg++ <--> Eth1G <--> gwRouter1.ethg++;   // GW2 -> router eth[1]
+        hybridGW3.ethg++ <--> Eth1G <--> gwRouter1.ethg++;   // GW3 -> router eth[2]
+        gwRouter1.ethg++ <--> Eth1G <--> networkServer.ethg++;  // router eth[3] -> server
 
-        // meshNode1 → gwRouter2  (Meshtastic G2G, V1'de Ethernet ile simüle)
-        // gwRouter2 = HybridGW2 IP rolü (INET Router, EthernetEncapsulation sorunu yok)
-        meshNode1.ethg++ <--> Eth1G <--> gwRouter2.ethg++;
-
-        // gwRouter2 → networkServer  (internet/WAN backhaul)
-        gwRouter2.ethg++ <--> Eth1G <--> networkServer.ethg++;
+        // === MeshNode'lar KABLOSUZ SADECE ===
+        // meshNode1/2/3/4 sadece sendDirect() beacon ile haberleşir.
+        // Fiziksel kablo bağlantısı YOK.
 }

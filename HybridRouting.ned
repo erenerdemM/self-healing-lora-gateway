@@ -32,7 +32,11 @@ simple HybridRouting
 
         // TX gücü (maliyet hesabında pay olarak kullanılır)
         double txPower_dBm = default(14.0);         // dBm
-
+        // Backhaul (internet) başlangıç durumu
+        //   true  → ONLINE: paketler doğrudan NetworkServer'a
+        //   false → FAILOVER: en iyi komşu GW'ye mesh üzerińden
+        // omnetpp.ini'den override: **.routingAgent.backhaulUp = false
+        bool backhaulUp = default(true);
         // ── CAD / Düşük Güç Parametreleri (MeshNode için) ────────────────
         // DEEP_SLEEP → CAD scan → (preamble bulunursa) → ACTIVE_RX → DEEP_SLEEP
         double cadInterval    @unit(s)  = default(0.5s);    // CAD tetikleme periyodu
@@ -42,6 +46,44 @@ simple HybridRouting
         // ── Komşu Tablosu ─────────────────────────────────────────────────
         // Belirtilen süreden eski giriş "stale" sayılıp silinir
         double neighborTimeout @unit(s) = default(30.0s);
+
+// ── Beacon & Gerçek Komşu Keşfi ──────────────────────────────────────
+        // Periyodik beacon yayını: Komşu tablolarını gerçek verilerle doldurur.
+        double beaconInterval @unit(s) = default(10.0s);  // Beacon periyodu
+        double beaconRssi    = default(-75.0);  // Simüle edilmiş mesh RSSI (dBm)
+        double sensorPacketRate = default(1.0); // Sensörden gelen pkt/saniye (kuyruk modeli)
+        int    maxQueueSize  = default(50);     // Maksimum kuyruk kapasitesi (pkt)
+
+        // Tek seferlik backhaul kesme zamanı (> 0 ise o anda isBackhaulUp_=false)
+        // omnetpp.ini: **.hybridGW1.routingAgent.backhaulCutTime = 200s
+        double backhaulCutTime @unit(s) = default(-1s);
+
+        // Runtime backhaul bayrağı — PacketForwarder bu parametreyi okuyarak
+        // mesh failover kararı verir. HybridRouting.cc tarafından dinamik olarak
+        // güncellenir: backhaulCutTimer tetiklendiğinde false yapılır.
+        // Doğrudan omnetpp.ini'den EZİLMEMELİ (runtime-only).
+        bool backhaulRuntimeUp @mutable = default(true);  // OMNeT++ 6: C++ setBoolValue() için @mutable
+
+        // Mesh kimliği: Beacon'da kullanılan sabitlenmiş IP benzeri adres
+        // omnetpp.ini: **.hybridGW1.routingAgent.meshAddress = "10.1.0.1"
+        string meshAddress = default("0.0.0.0");
+
+        // Topoloji zorlaması: Beacon sadece bu listedeki modüllere gönderilir.
+        // Boslukla ayrılmış modül adları (NED submodule isimleri).
+        // Boş bırakılırsa tüm ağa broadcast yapılır (eski davranış).
+        // Örn: "meshNode1" veya "meshNode1 meshNode2"
+        string meshNeighborList = default("");
+
+        // ── Sinyaller (istatistik kaydı için) ────────────────────────────
+        //   powerState     : 0=NORMAL 1=FAILOVER 2=MESH_ONLY 3=RECOVERY 4=ERROR
+        @signal[powerState](type=long);
+        @statistic[powerState](title="Guc Durumu"; source=powerState; record=vector; interpolationmode=sample-hold);
+        //   routingCost    : Secilen next-hop icin hesaplanan C_i degeri
+        @signal[routingCost](type=double);
+        @statistic[routingCost](title="Yonlendirme Maliyeti Ci"; source=routingCost; record=vector,mean,min,max);
+        //   congestionEvent: Darboğaz tespiti → 2. komşuya geçis sayisi
+        @signal[congestionEvent](type=long);
+        @statistic[congestionEvent](title="Darboğaz Olayi"; source=congestionEvent; record=count,vector);
 
         @display("i=block/routing");
         @class(HybridRouting);

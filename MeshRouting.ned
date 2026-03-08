@@ -41,6 +41,19 @@ simple MeshRouting
         // Bu süreden eski giriş "stale" sayılıp silinir
         double neighborTimeout @unit(s) = default(30.0s);
 
+        // ── Mesh Ağ Kimliği & Beacon ──────────────────────────────────────
+        // Bu MeshNode'un mesh ağındaki adresi (beacon'da kullanılır)
+        string meshAddress = default("0.0.0.0");
+        // Periyodik beacon yayın aralığı
+        double beaconInterval @unit(s) = default(10.0s);
+        // Simüle edilmiş beacon RSSI değeri (dBm)
+        double beaconRssi = default(-75.0);
+        // Sabit kuyruk doluluk oranı: MeshNode'un taşıdığı yük simülasyonu
+        double meshQueueOccupancy = default(0.1);
+        // Topoloji zorlaması: Beacon sadece bu listedeki modüllere gönderilir.
+        // Boşlukla ayrılmış modül adları (NED submodule isimleri).
+        // Örn: "hybridGW1 meshNode2 meshNode3"
+        string meshNeighborList = default("");
         @display("i=block/routing");
         @class(MeshRouting);
 
@@ -68,10 +81,10 @@ simple MeshRouting
             record=vector,mean,max);
 
     gates:
-        // Üst katmandan yönlendirme kararı talebi
-        input  routeRequestIn;
+        // Üst katmandan veya HybridGateway'den (sendDirect ile) yönlendirme talebi
+        input  routeRequestIn @directIn;
         // Seçilen next-hop adresi üst katmana
         output routeDecisionOut;
-        // MAC katmanından komşu RSSI/beacon bildirimleri
-        input  neighborUpdateIn;
+        // MAC katmanından veya beacon'dan (sendDirect ile) komşu RSSI/beacon bildirimleri
+        input  neighborUpdateIn @directIn;
 }

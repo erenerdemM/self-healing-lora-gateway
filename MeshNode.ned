@@ -32,9 +32,12 @@ module MeshNode extends AdhocHost
         // IP forwarding AdhocHost'ta zaten true; açıkça belirtiyoruz
         forwarding = default(true);
 
-        // V1: MeshNode Ethernet üzerinden bağlı, LoRaMedium ile çakışmaması için
-        // WiFi radyosu devre dışı. V2'de gerçek LoRa radyo eklenecek.
-        numWlanInterfaces = default(0);
+        // V2: SX1262 LoRa radyo eklenecek, IEEE 802.11 PHY kaldırılacak.
+        // V1 → V2 geçişi: numWlanInterfaces = 1 (enerji tüketimi ölçülebilir)
+        // CAD simüle eden StateBasedEpEnergyConsumer wlan[0] üzerinde çalışır.
+        // LoRaMedium çakışması önlem: MeshNode Ethernet ile bağlı, WLAN fiziksel
+        // ortum LoRaMedium'dan ayrı tutulacak (V2: meshtasticMedium eklenecek).
+        numWlanInterfaces = default(1);
 
         // ── Enerji deposu ──────────────────────────────────────────────────
         // NodeBase'deki energyStorage slotunu IdealEpEnergyStorage ile doldur

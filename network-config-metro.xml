@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  network-config-metro.xml  —  MetroScale (5000×5000m) IP Konfigürasyonu
+  ARP yok (GlobalArp). Statik rota yok (addStaticRoutes=false).
+  Her arayüz tipi ayrı /24 subnet'te — sadece IP ataması, rota değil.
+  Ethernet bağlantısı YOKTUR; sadece tryResolve() için IP gereklidir.
+-->
+<config>
+    <!-- LoRaGWNic: GW LoRa radyo arayüzleri -->
+    <interface hosts="LoraMeshNetworkMetro.hybridGW*" names="LoRaGWNic"
+               address="10.99.0.x" netmask="255.255.255.0"
+               add-static-route="false" add-subnet-route="false"
+               add-default-route="false" add-multicast-route="false" />
+
+    <!-- LoRaNic: EndNode (sensör) LoRa arayüzleri -->
+    <interface hosts="LoraMeshNetworkMetro.sensorGW*" names="LoRaNic"
+               address="10.98.0.x" netmask="255.255.255.0"
+               add-static-route="false" add-subnet-route="false"
+               add-default-route="false" add-multicast-route="false" />
+
+    <!-- wlan0: MeshNode WLAN arayüzleri -->
+    <interface hosts="LoraMeshNetworkMetro.meshNode*" names="wlan0"
+               address="10.97.0.x" netmask="255.255.255.0"
+               add-static-route="false" add-subnet-route="false"
+               add-default-route="false" add-multicast-route="false" />
+
+    <!-- NetworkServer eth0: PacketForwarder'ın tryResolve() için sabit IP -->
+    <interface hosts="LoraMeshNetworkMetro.networkServer" names="eth0"
+               address="10.50.0.1" netmask="255.255.255.0"
+               add-static-route="false" add-subnet-route="false"
+               add-default-route="false" add-multicast-route="false" />
+</config>

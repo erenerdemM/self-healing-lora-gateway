@@ -30,6 +30,7 @@
 #include "MeshRouting.h"
 #include <algorithm>
 #include <limits>
+#include <sstream>
 
 Define_Module(MeshRouting);
 
@@ -65,7 +66,19 @@ void MeshRouting::initialize(int stage)
         neighborTimeout_s_ = par("neighborTimeout");
         // par("cadDuration") @unit(ms) → getValue() milisaniye cinsinden
         cadDuration_ms_    = par("cadDuration");
+        // ── Beacon parametreleri ─────────────────────────────────────────────
+        beaconInterval_s_    = par("beaconInterval");
+        beaconRssi_          = par("beaconRssi");
+        meshQueueOccupancy_  = par("meshQueueOccupancy");
 
+        // Topoloji komşu listesini parse et
+        std::string listStr = par("meshNeighborList").stringValue();
+        if (!listStr.empty()) {
+            std::istringstream iss(listStr);
+            std::string token;
+            while (iss >> token) meshNeighborList_.push_back(token);
+            EV_INFO << "[MeshRouting] meshNeighborList: " << listStr << "\n";
+        }
         // ── Zamanlayıcı nesnelerini oluştur ───────────────────────────────
         cadTimer_       = new cMessage("cadTimer");
         cadEndTimer_    = new cMessage("cadEndTimer");
@@ -78,8 +91,15 @@ void MeshRouting::initialize(int stage)
     }
 
     if (stage == inet::INITSTAGE_NETWORK_LAYER) {
-        // Cihaz ilk açıldığında DEEP_SLEEP'te başlar; cadTimer kurulur
+        // Cihaz ilk açıldığında DEEP_SLEEP'te başlıyor
         enterDeepSleep();
+
+        // Beacon zamanlaycısını kur
+        beaconTimer_ = new cMessage("meshBeaconTimer");
+        scheduleAt(simTime() + beaconInterval_s_, beaconTimer_);
+        EV_INFO << "[MeshRouting] Beacon timer kuruldu: t+"
+                << beaconInterval_s_ << "s  addr="
+                << par("meshAddress").stringValue() << "\n";
     }
 }
 
@@ -92,6 +112,12 @@ void MeshRouting::handleMessage(cMessage *msg)
     // 1. ÖZ-MESAJLAR: Zamanlayıcı olayları (güç durum makinesi)
     // =========================================================================
     if (msg->isSelfMessage()) {
+
+        if (msg == beaconTimer_) {
+            broadcastBeaconToMeshNeighbors();
+            scheduleAt(simTime() + beaconInterval_s_, beaconTimer_);
+            return;
+        }
 
         if (msg == cadTimer_) {
             // cadInterval doldu → kanal aktivitesi tara
@@ -197,7 +223,19 @@ void MeshRouting::handleMessage(cMessage *msg)
     //                  beaconMsg->getIsOnlineGateway());
     //
     if (gateId == findGate("neighborUpdateIn")) {
-        EV_INFO << "[MeshRouting] Komşu güncelleme mesajı alındı (V2'de işlenecek).\n";
+        // Komşu GW veya MeshNode'dan gelen beacon mesajını parse et
+        if (msg->hasPar("senderAddr")) {
+            std::string senderAddr = msg->par("senderAddr").stringValue();
+            double rssi_dBm = msg->par("rssi").doubleValue();
+            double queueOcc = msg->par("queue").doubleValue();
+            bool   isOnline = msg->par("online").boolValue();
+            int    hopToGw  = (int)msg->par("hopToGw").longValue();
+            L3Address addr(senderAddr.c_str());
+            if (!addr.isUnspecified())
+                updateNeighbor(addr, rssi_dBm, hopToGw, queueOcc, isOnline);
+            else
+                EV_WARN << "[MeshRouting] Beacon: geçersiz adres '" << senderAddr << "'\n";
+        }
         delete msg;
         return;
     }
@@ -215,6 +253,7 @@ void MeshRouting::finish()
     cancelAndDelete(cadTimer_);       cadTimer_       = nullptr;
     cancelAndDelete(cadEndTimer_);    cadEndTimer_    = nullptr;
     cancelAndDelete(rxTimeoutTimer_); rxTimeoutTimer_ = nullptr;
+    cancelAndDelete(beaconTimer_);    beaconTimer_    = nullptr;
 }
 
 // =============================================================================
@@ -508,4 +547,104 @@ void MeshRouting::onRxTimeout()
     EV_WARN << "[MeshRouting] ACTIVE_RX timeout (" << activeRxTimeout_s_
             << "s) — paket alınamadı → DEEP_SLEEP\n";
     enterDeepSleep();
+}
+
+
+// =============================================================================
+// Beacon Yayını — MeshNode Komşu Keşfi (Topoloji Listesine Göre Filtrelenir)
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// broadcastBeaconToMeshNeighbors
+//
+// Komşu listesindeki (meshNeighborList) modüllere periyodik beacon gönderir.
+// Liste boşsa tüm ağa broadcast yapılır (geriye dönük uyumluluk).
+//
+// Beacon içeriği:
+//   senderAddr : meshAddress parametresinden
+//   rssi       : beaconRssi_ + küçük rastgele sapma
+//   queue      : meshQueueOccupancy_ (sabit düşük yük)
+//   online     : false — MeshNode'ların interneti yok
+//   hopToGw    : computeHopToGw() — en yakın ONLINE-GW'ye hop sayısı
+// -----------------------------------------------------------------------------
+void MeshRouting::broadcastBeaconToMeshNeighbors()
+{
+    const char *myAddr = par("meshAddress").stringValue();
+    int hopToGw        = computeHopToGw();
+
+    EV_INFO << "[MeshRouting] --- MESH BEACON t=" << simTime() << "s"
+            << "  addr=" << myAddr
+            << "  hopToGw=" << hopToGw
+            << "  queue=" << meshQueueOccupancy_ * 100.0 << "%"
+            << (meshNeighborList_.empty() ? "  [broadcast-all]" : "  [filtered-topology]")
+            << "\n";
+
+    // Topoloji filtresi: sadece listede olan modüllere beacon gönder
+    auto isInList = [&](const std::string& nodeName) -> bool {
+        if (meshNeighborList_.empty()) return true;
+        for (const auto& n : meshNeighborList_) {
+            if (nodeName == n) return true;
+        }
+        return false;
+    };
+
+    cModule *network = getSimulation()->getSystemModule();
+    int count = 0;
+
+    for (cModule::SubmoduleIterator it(network); !it.end(); ++it) {
+        cModule *node = *it;
+        if (!node || !isInList(node->getName())) continue;
+
+        // Hedef MeshNode'a beacon gönder (meshRouting submodülü)
+        cModule *mr = node->getSubmodule("meshRouting");
+        if (mr && mr != this && mr->findGate("neighborUpdateIn") >= 0) {
+            cMessage *beacon = new cMessage("meshNodeBeacon");
+            beacon->addPar("senderAddr").setStringValue(myAddr);
+            beacon->addPar("rssi").setDoubleValue(beaconRssi_ + uniform(-2.0, 2.0));
+            beacon->addPar("queue").setDoubleValue(meshQueueOccupancy_);
+            beacon->addPar("online").setBoolValue(false);
+            beacon->addPar("hopToGw").setLongValue(hopToGw);
+            sendDirect(beacon, mr, "neighborUpdateIn");
+            ++count;
+            EV_INFO << "[MeshRouting] └─ Beacon → " << node->getName()
+                    << "  hopToGw=" << hopToGw << "\n";
+        }
+
+        // Hedef HybridGateway'e beacon gönder (routingAgent submodülü)
+        cModule *ra = node->getSubmodule("routingAgent");
+        if (ra && ra != this && ra->findGate("neighborUpdateIn") >= 0) {
+            cMessage *beacon = new cMessage("meshNodeBeacon");
+            beacon->addPar("senderAddr").setStringValue(myAddr);
+            beacon->addPar("rssi").setDoubleValue(beaconRssi_ + uniform(-2.0, 2.0));
+            beacon->addPar("queue").setDoubleValue(meshQueueOccupancy_);
+            beacon->addPar("online").setBoolValue(false);
+            beacon->addPar("hopToGw").setLongValue(hopToGw);
+            sendDirect(beacon, ra, "neighborUpdateIn");
+            ++count;
+            EV_INFO << "[MeshRouting] └─ Beacon → " << node->getName()
+                    << " (GW)  hopToGw=" << hopToGw << "\n";
+        }
+    }
+
+    EV_INFO << "[MeshRouting] Beacon gönderildi: " << count << " alıcı\n";
+}
+
+// -----------------------------------------------------------------------------
+// computeHopToGw — En yakın ONLINE-GW'ye kaç hop?
+//
+// Komşu tablosunda:
+//   - isOnlineGateway=true olan varsa → 1 hop yeterli (doğrudan bağlı GW)
+//   - Yoksa en küçük hopCountToGateway + 1 değerini döndür
+//   - Tablo boşsa → 10 (erişilmez)
+// -----------------------------------------------------------------------------
+int MeshRouting::computeHopToGw() const
+{
+    int minHop = 999;
+    for (const auto& kv : neighborTable_) {
+        const NeighborEntry& e = kv.second;
+        if (e.isOnlineGateway) return 1;  // Doğrudan ONLINE-GW komşusu
+        if (e.hopCountToGateway + 1 < minHop)
+            minHop = e.hopCountToGateway + 1;
+    }
+    return (minHop == 999) ? 10 : minHop;
 }

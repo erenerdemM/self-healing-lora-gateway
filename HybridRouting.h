@@ -117,33 +117,93 @@ class HybridRouting : public cSimpleModule
 
     double txPower_dBm_;         // Varsayılan gönderim gücü
 
+    // Beacon / kuyruk parametreleri
+    double beaconInterval_s_;    // Beacon yayın periyodu (s)
+    double beaconRssi_;          // Simüle edilmiş mesh RSSI (dBm)
+    double sensorPacketRate_;    // Sensör paket varış hızı (pkt/s)
+    int    maxQueueSize_;        // Kuyruk kapasitesi (pkt)
+    double backhaulCutTime_s_;   // Bu zamanda backhaul kesilir (< 0 = yok)
+
+    // Dinamik kuyruk doluluk oranı [0..1] — her backhaulTimer'da güncellenir
+    double currentQueueOcc_;
+
+    // Failover loglama sayacı (her 5s'de bir detaylı log)
+    int    failoverLogCounter_;
+
   // ─── Durum ─────────────────────────────────────────────────────────────────
     PowerState currentPowerState_;
+
+    // Backhaul (internet) bağlantı durumu.
+    // Başlangıç değeri initialize()'da par("backhaulUp") ile okunur.
+    // omnetpp.ini'den: **.routingAgent.backhaulUp = false  (bölümsel failover)
+    // Simülasyon içi event: setBackhaulUp(false) — örn. t=200s'de
+    bool isBackhaulUp_ = true;  // initialize()'da par() ile ezilir
+
+    /** omnetpp.ini veya harici C++ event'inden çağrılabilir */
+    void setBackhaulUp(bool up) { isBackhaulUp_ = up; }
+
+    // Paket sıra numarası sayacı (her encapsulation'da artar)
+    int seqCounter_ = 0;
+
+    // Topoloji kısıtı: sadece bu modül adlarına beacon gönderilir
+    // Boşsa → tüm ağa broadcast (geriye dönük uyumlu)
+    std::vector<std::string> meshNeighborList_;
 
     // Komşu tablosu: IP adresi → NeighborEntry
     std::map<L3Address, NeighborEntry> neighborTable_;
 
   // ─── Dahili zamanlayıcılar ─────────────────────────────────────────────────
-    cMessage *cadTimer_      = nullptr;  // Periyodik CAD tetikleyici
-    cMessage *sleepTimer_    = nullptr;  // Active Rx timeout → Deep Sleep
-    cMessage *backhaulTimer_ = nullptr;  // Backhaul durumu kontrol döngüsü
+    cMessage *cadTimer_              = nullptr;  // Periyodik CAD tetikleyici
+    cMessage *sleepTimer_            = nullptr;  // Active Rx timeout → Deep Sleep
+    cMessage *backhaulTimer_         = nullptr;  // Backhaul durumu kontrol döngüsü
+    cMessage *beaconTimer_           = nullptr;  // Periyodik beacon yayını
+    cMessage *backhaulCutTimer_      = nullptr;  // Tek seferlik backhaul kesme
+
+    /** Tüm ağdaki MeshRouting ve HybridRouting modüllerine beacon gönder. */
+    void broadcastBeaconToMeshNeighbors();
+
 
   // ─── İstatistik sinyalleri ─────────────────────────────────────────────────
     simsignal_t powerStateSignal_;       // Güç durumu geçişlerini kaydet
     simsignal_t routingCostSignal_;      // Seçilen next-hop maliyetini kaydet
-    simsignal_t congestionEventSignal_;  // Darboğaz nedeniyle 2. komşuya geçiş sayısı
+    simsignal_t congestionEventSignal_;  // Darboğaz / SOS olaylarını say
 
   // ─── Dahili yardımcı fonksiyonlar ─────────────────────────────────────────
+    /** Backhaul sağlıklı mı? (simülasyonda isBackhaulUp_ bayrağına bakar) */
+    bool checkBackhaulAlive() const;
+
+    /** Mesh failover: SensorDataPacket oluştur ve en iyi komşu GW'ye ilet */
+    void forwardToMesh(cMessage *originalMsg);
+
+    /**
+     * Komşu tablosunu tarayarak en iyi hedef Gateway adresini seç.
+     * Darboğaz koruması: Q_i >= congestionThreshold → 2. komşuya fallback.
+     */
+    L3Address selectBestNeighborGateway();
+
+    /**
+     * Bölgesel çöküş veya tam darboğaz durumunda SosBeaconPacket yayınla.
+     * @param reasonCode  0=CONGESTION 1=REGIONAL_FAILURE 2=GATEWAY_DOWN 3=LINK_DEGRADED
+     */
+    void broadcastSosBeacon(int reasonCode);
+
+    /** Online Gateway sayısını döndür (tablo taze girişler için) */
+    int  countOnlineGateways() const;
+
+    /** Tüm komşular darboğazda mı? */
+    bool areAllNeighborsCongested() const;
+
     /**
      * Tek bir komşu için C_i maliyet değerini hesapla.
      * C_i = α·(P_tx/|RSSI_i|) + β·Q_i + γ·H_i
-     * Not: RSSI negatif olduğundan mutlak değer alınır.
      */
     double computeCost(const NeighborEntry& n, double txPower_dBm) const;
 
+    /** Verilen adrese göre maliyet hesapla (emit için) */
+    double computeCostForAddress(const L3Address& addr) const;
+
     /**
      * Komşu tablosunu artan maliyet sırasına göre sırala.
-     * Darboğaz tespiti bu listeye göre yapılır.
      */
     std::vector<std::pair<L3Address, NeighborEntry>>
         getSortedNeighbors(double txPower_dBm) const;

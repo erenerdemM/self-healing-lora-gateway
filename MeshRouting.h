@@ -142,6 +142,14 @@ class MeshRouting : public cSimpleModule
     double activeRxTimeout_s_;   // Bu süre geçince ACTIVE_RX → DEEP_SLEEP
     double neighborTimeout_s_;   // Bu süre geçince komşu silindi
 
+    // Beacon parametreleri
+    double beaconInterval_s_;    // Periyodik beacon yayın aralığı
+    double beaconRssi_;          // Simüle edilmiş beacon RSSI (dBm)
+    double meshQueueOccupancy_;  // Sabit kuyruk doluluk oranı
+
+    // Topoloji kısıt listesi: sadece bu modül adlarına beacon gönderilir
+    std::vector<std::string> meshNeighborList_;
+
   // ─── Durum ─────────────────────────────────────────────────────────────────
     PowerState currentState_ { PowerState::DEEP_SLEEP };
 
@@ -151,10 +159,12 @@ class MeshRouting : public cSimpleModule
     // Yönlendirme bekleyen paketin hedef adresi (PROCESSING süresince tutulur)
     L3Address pendingDestination_;
 
-  // ─── Dahili zamanlayıcılar ─────────────────────────────────────────────────
-    cMessage *cadTimer_       = nullptr;  // Periyodik CAD uyanma zamanlayıcısı
-    cMessage *cadEndTimer_    = nullptr;  // CAD tarama bitiş zamanlayıcısı
-    cMessage *rxTimeoutTimer_ = nullptr;  // ACTIVE_RX zaman aşımı
+  // ─ Dahili zamanlayıcılar ────────────────────────────────────────────────
+    cMessage *cadTimer_         = nullptr;  // Periyodik CAD uyanma zamanlayıcısı
+    cMessage *cadEndTimer_      = nullptr;  // CAD tarama bitiş zamanlayıcısı
+    cMessage *rxTimeoutTimer_   = nullptr;  // ACTIVE_RX zaman aşımı
+    cMessage *beaconTimer_      = nullptr;  // Periyodik mesh beacon zamanlayıcısı
+
 
   // ─── İstatistik sinyalleri ─────────────────────────────────────────────────
     static simsignal_t powerStateSignal_;        // Güç durum geçişlerini kaydet
@@ -189,8 +199,6 @@ class MeshRouting : public cSimpleModule
 
     /**
      * CAD tarama sonucu: havada preamble var mı?
-     * Gerçek donanımda donanım kesme (hardware interrupt) ile tetiklenir.
-     * Simülasyonda belirli bir olasılıkla preamble simüle edilir.
      */
     void onCADComplete(bool preambleDetected);
 
@@ -198,6 +206,19 @@ class MeshRouting : public cSimpleModule
      * ACTIVE_RX zaman aşımı: paket gelmedi, DEEP_SLEEP'e dön.
      */
     void onRxTimeout();
+
+    /**
+     * Komşulara periyodik beacon yayını (topoloji listesine göre filtrelenir).
+     * Beacon içeriği: meshAddress, RSSI, kuyruk doluluk, online=false, hopToGw.
+     */
+    void broadcastBeaconToMeshNeighbors();
+
+    /**
+     * Komşu tablosundan en yakın ONLINE-GW'ye kaç hop gerektiğini hesapla.
+     * Doğrudan komşu ONLINE-GW varsa 1; onun komşusundaysa 2; vb.
+     * Tablo boşsa 10 (çok uzak) döner.
+     */
+    int computeHopToGw() const;
 };
 
 #endif // MESHROUTING_H

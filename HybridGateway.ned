@@ -47,12 +47,19 @@ module HybridGateway extends LoRaGW
         // Backhaul kontrol periyodu
         double backhaulCheckInterval @unit(s) = default(0.1s);
 
+        // Backhaul başlangıç durumu (omnetpp.ini'den override edilebilir)
+        //   [General] → true  : ONLINE mod
+        //   [V2-Failover] bölümünde → false : t=0'dan itibaren failover testi
+        //   Dinamik kesinti: t=200s'de event üzerinden setBackhaulUp(false)
+        bool backhaulUp = default(true);
+
         // Ajanına parametre iletimi
         routingAgent.alpha                 = default(this.alpha);
         routingAgent.beta                  = default(this.beta);
         routingAgent.gamma                 = default(this.gamma);
         routingAgent.congestionThreshold   = default(this.congestionThreshold);
         routingAgent.backhaulCheckInterval = default(this.backhaulCheckInterval);
+        routingAgent.backhaulUp            = default(this.backhaulUp);
 
     submodules:
         // Enerji deposu — simülasyon boyunca tüketimi izler
@@ -63,4 +70,10 @@ module HybridGateway extends LoRaGW
         routingAgent: HybridRouting {
             @display("p=160,350");
         }
+
+    connections allowunconnected:
+        // Veri düzlemi entegrasyonu: backhaul DOWN iken PacketForwarder,
+        // sensör paketlerini doğrudan bu bağlantı üzerinden HybridRouting'e iletir.
+        // HybridRouting → SENARYO B → forwardToMesh() → sendDirect → hedef MeshNode
+        packetForwarder.hybridOut --> routingAgent.routeRequestIn;
 }
