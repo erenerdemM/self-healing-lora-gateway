@@ -7,6 +7,7 @@
 // =============================================================================
 
 import flora.LoRaPhy.LoRaMedium;
+import inet.environment.common.PhysicalEnvironment;
 import inet.networklayer.configurator.ipv4.Ipv4NetworkConfigurator;
 import inet.node.ethernet.Eth1G;
 import inet.node.inet.Router;
@@ -30,6 +31,9 @@ network LoraMeshNetworkMid
         }
         configurator: Ipv4NetworkConfigurator {
             @display("p=480,60;i=block/cogwheel;is=s");
+        }
+        physicalEnvironment: PhysicalEnvironment {
+            @display("p=680,60;i=misc/city;is=s");
         }
 
         // ── Sensörler ──────────────────────────────────────────────

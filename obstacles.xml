@@ -1,0 +1,92 @@
+<environment>
+    <!-- ================================================================
+         obstacles.xml — 5000×5000 m LoraMeshNetworkMid için Fiziksel Engeller
+         15 beton/tuğla bina bloğu: GW↔Mesh arası kritik RF yollarını kesiyor
+         Format: position="center X Y Z"  shape="cuboid GENİŞLİK UZUNLUK YÜKSEKLİK"
+         Koordinatlar doğrudan omnetpp.ini konumlarıyla örtüşür.
+         ================================================================ -->
+
+    <!-- BÖLGE 1: Kuzey-Batı Sektörü (GW1 625,469 | GW2 1719,313 arası) -->
+    <object position="center 900 400 20" orientation="0 0 0"
+            shape="cuboid 200 150 40" material="concrete"
+            fill-color="120 120 120" opacity="0.8"
+            description="Beton Fabrika Binası A"/>
+
+    <object position="center 1300 380 20" orientation="0 0 0"
+            shape="cuboid 180 120 40" material="concrete"
+            fill-color="120 120 120" opacity="0.8"
+            description="Beton Fabrika Binası B"/>
+
+    <!-- BÖLGE 2: Kuzey Merkez (GW3 3125,547 | GW4 4219,1094 arası) -->
+    <object position="center 2500 500 25" orientation="0 0 0"
+            shape="cuboid 300 200 50" material="concrete"
+            fill-color="100 100 100" opacity="0.85"
+            description="Endüstriyel Depo Kompleksi"/>
+
+    <object position="center 3700 800 20" orientation="0 0 0"
+            shape="cuboid 200 200 40" material="brick"
+            fill-color="160 80 60" opacity="0.8"
+            description="Tuğla Ambar Binası"/>
+
+    <!-- BÖLGE 3: Orta-Batı Sektörü (GW5 313,2188 | GW6 1563,2344 arası) -->
+    <object position="center 750 2200 20" orientation="0 0 0"
+            shape="cuboid 250 180 40" material="concrete"
+            fill-color="120 120 120" opacity="0.8"
+            description="Beton Yönetim Binası"/>
+
+    <object position="center 1100 2300 15" orientation="0 0 0"
+            shape="cuboid 150 100 30" material="brick"
+            fill-color="160 80 60" opacity="0.8"
+            description="Tuğla Konut Bloğu"/>
+
+    <!-- BÖLGE 4: Merkez Sektör (GW7 2969,2031 | GW6 1563,2344 arası) -->
+    <object position="center 2200 2200 30" orientation="0 0 0"
+            shape="cuboid 400 300 60" material="concrete"
+            fill-color="90 90 90" opacity="0.9"
+            description="Büyük Beton Alışveriş Merkezi (Ana Engel)"/>
+
+    <object position="center 2600 1900 20" orientation="0 0 0"
+            shape="cuboid 200 150 40" material="concrete"
+            fill-color="120 120 120" opacity="0.8"
+            description="Beton Ofis Binası"/>
+
+    <!-- BÖLGE 5: Orta-Doğu Sektörü (GW8 4219,2813 | GW7 2969,2031 arası) -->
+    <object position="center 3600 2500 25" orientation="0 0 0"
+            shape="cuboid 300 200 50" material="concrete"
+            fill-color="110 110 110" opacity="0.85"
+            description="Beton Sanayi Binası"/>
+
+    <object position="center 4000 2600 20" orientation="0 0 0"
+            shape="cuboid 180 180 40" material="brick"
+            fill-color="160 80 60" opacity="0.8"
+            description="Tuğla Lojistik Merkezi"/>
+
+    <!-- BÖLGE 6: Güney-Batı Sektörü (GW9 938,3906 | GW5 313,2188 arası) -->
+    <object position="center 600 3100 20" orientation="0 0 0"
+            shape="cuboid 200 300 40" material="concrete"
+            fill-color="120 120 120" opacity="0.8"
+            description="Beton Hastane Binası"/>
+
+    <object position="center 700 3600 15" orientation="0 0 0"
+            shape="cuboid 150 120 30" material="brick"
+            fill-color="160 80 60" opacity="0.8"
+            description="Tuğla Okul Binası"/>
+
+    <!-- BÖLGE 7: Güney-Doğu Sektörü (GW10 3281,4063 | GW8 4219,2813 arası) -->
+    <object position="center 3800 3500 25" orientation="0 0 0"
+            shape="cuboid 300 250 50" material="concrete"
+            fill-color="100 100 100" opacity="0.85"
+            description="Beton Üniversite Kampüsü Bloğu"/>
+
+    <object position="center 3200 4000 20" orientation="0 0 0"
+            shape="cuboid 200 200 40" material="brick"
+            fill-color="160 80 60" opacity="0.8"
+            description="Tuğla Çok Katlı Bina"/>
+
+    <!-- BÖLGE 8: Güney Merkez (GW9 938,3906 | GW10 3281,4063 arası) -->
+    <object position="center 2100 4000 20" orientation="0 0 0"
+            shape="cuboid 350 200 40" material="concrete"
+            fill-color="115 115 115" opacity="0.85"
+            description="Merkez Güney Beton Terminal Binası (Kritik Engel)"/>
+
+</environment>

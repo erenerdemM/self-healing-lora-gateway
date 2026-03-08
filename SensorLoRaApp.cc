@@ -52,7 +52,12 @@ void SensorLoRaApp::handleMessage(omnetpp::cMessage *msg)
         sentPackets++;
 
         if (numberOfPacketsToSend == 0 || sentPackets < numberOfPacketsToSend) {
-            scheduleAt(simTime() + sendInterval, msg);
+            // Re-sample interval each time (volatile distribution support).
+            // Floor at 3 s to stay above LoRa ToA (SF12/125kHz/11B ≈ 1.45 s).
+            simtime_t nextInterval = par("sendInterval");
+            if (nextInterval < SimTime(3, SIMTIME_S))
+                nextInterval = SimTime(3, SIMTIME_S);
+            scheduleAt(simTime() + nextInterval, msg);
         }
         else {
             delete msg;
