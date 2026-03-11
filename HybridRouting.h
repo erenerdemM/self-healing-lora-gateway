@@ -22,7 +22,9 @@
 
 #include <map>
 #include <vector>
+#include <deque>
 #include <string>
+#include <utility>
 
 #include <omnetpp.h>
 
@@ -117,6 +119,19 @@ class HybridRouting : public cSimpleModule
 
     double txPower_dBm_;         // Varsayılan gönderim gücü
 
+    // ── LoRaWAN Gateway downlink parametreleri (BTK KET / ETSI EN 300 220-2) ──
+    double bandMTxPower_dBm_;    // Band M: 14 dBm ERP (ACK/Join-Accept/MAC)
+    double bandMDutyCycle_;      // Band M: %1 DC → 36 s/saat
+    double rx2TxPower_dBm_;      // Band P RX2: 27 dBm max
+    double rx2DutyCycle_;        // Band P: %10 DC → 360 s/saat
+    double rx2Frequency_Hz_;     // 869.525 MHz (Band P merkezi)
+    double txQuotaWindow_s_;     // Kayan pencere: 3600 s
+    double antennaGain_dBi_;     // Anten kazancı (EIRP düzeltmesi)
+    int    numDemodulators_;     // 16 bağımsız demodülatör (8 kanal × 2)
+    // Kayan 1-saatlik TX logları: (zaman, toa_s)
+    std::deque<std::pair<simtime_t, double>> txLogBandM_;  // Band M downlink log
+    std::deque<std::pair<simtime_t, double>> txLogRx2_;    // RX2 downlink log
+
     // Beacon / kuyruk parametreleri
     double beaconInterval_s_;    // Beacon yayın periyodu (s)
     double beaconRssi_;          // Simüle edilmiş mesh RSSI (dBm)
@@ -129,6 +144,13 @@ class HybridRouting : public cSimpleModule
 
     // Failover loglama sayacı (her 5s'de bir detaylı log)
     int    failoverLogCounter_;
+
+    // ── İşlemci Gecikmesi Modeli (STM32 gerçekliği) ───────────────────────────
+    // SX1303 SPI okuma + DMA kopyalama + CPU interrupt servisi → ~5-15ms
+    // 0.0 ise eski sıfır-gecikme davranışı korunur.
+    double  processingDelay_ms_;      // par("processingDelay")
+    cMessage *processTimer_ = nullptr; // Geciktirilmiş routing kararı zamanlayıcısı
+    cMessage *pendingMsg_   = nullptr; // İşlem bekleyen tek paket (basit model)
 
   // ─── Durum ─────────────────────────────────────────────────────────────────
     PowerState currentPowerState_;
@@ -167,6 +189,7 @@ class HybridRouting : public cSimpleModule
     simsignal_t powerStateSignal_;       // Güç durumu geçişlerini kaydet
     simsignal_t routingCostSignal_;      // Seçilen next-hop maliyetini kaydet
     simsignal_t congestionEventSignal_;  // Darboğaz / SOS olaylarını say
+    simsignal_t droppedPacketSignal_;    // Drop-Tail: kuyruk dolu → paket düşürüldü
 
   // ─── Dahili yardımcı fonksiyonlar ─────────────────────────────────────────
     /** Backhaul sağlıklı mı? (simülasyonda isBackhaulUp_ bayrağına bakar) */
@@ -187,11 +210,37 @@ class HybridRouting : public cSimpleModule
      */
     void broadcastSosBeacon(int reasonCode);
 
+    /**
+     * routeRequestIn üzerinden gelen mesajı işle (processingDelay sonrası).
+     * Backhaul durumuna göre SENARYO A (doğrudan) veya SENARYO B (mesh) karar verilir.
+     */
+    void processRouteRequest(cMessage *msg);
+
     /** Online Gateway sayısını döndür (tablo taze girişler için) */
     int  countOnlineGateways() const;
 
     /** Tüm komşular darboğazda mı? */
     bool areAllNeighborsCongested() const;
+
+    /**
+     * Band M downlink için DC kota kontrolü (kayan 1-saatlik pencere).
+     * toaSeconds: gönderilecek downlink paketin hava süresi (s)
+     * Dönüş: true → TX izinli; false → DC kota doldu (TX Suspend)
+     */
+    bool checkBandMDutyCycle(double toaSeconds);
+
+    /**
+     * RX2 (Band P) downlink için DC kota kontrolü.
+     * Dönüş: true → TX izinli; false → TX Suspend
+     */
+    bool checkRx2DutyCycle(double toaSeconds);
+
+    /**
+     * Anten kazancını EIRP limitine göre düzelt.
+     * Dönüş: gerçek TX gücü (dBm) = txPower_dBm - antennaGain_dBi
+     * EIRP = cihaz TX + anten kazancı ≤ yasal limit
+     */
+    double effectiveTxPower(double txPower_dBm) const;
 
     /**
      * Tek bir komşu için C_i maliyet değerini hesapla.

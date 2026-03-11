@@ -27,14 +27,63 @@ simple MeshRouting
         // Darboğaz eşiği — aşılırsa 2. en iyi komşu seçilir
         double congestionThreshold = default(0.8);   // 0.8 = %80
 
-        // TX gücü (SX1262, 14 dBm — maliyet formülünde pay)
-        double txPower_dBm = default(14.0);
+        // TX gücü (SX1262 hw üst sınır 22 dBm — Band P yasal: 27 dBm ERP)
+        double txPower_dBm = default(22.0);
+
+        // ── Meshtastic LoRa Radyo Parametreleri (EU_868 Bant P) ──────────
+        // Meshtastic EU_868: Bant P (869.4-869.65 MHz) = %10 DC, 27 dBm max
+        // (Bant M/L = %1 DC; Bant P = %10 DC → 10× daha geniş TX kotası)
+        // Kanal merkezi: (869.4 + 869.65) / 2 = 869.525 MHz
+        double loraCarrierFrequency @unit(Hz) = default(869.525MHz);
+
+        // LongFast (varsayılan preset): SF11 / BW=250kHz / LDRO=ON
+        // ShortFast: SF7/250kHz | MediumFast: SF9/250kHz | LongSlow: SF12/125kHz
+        double loraBandwidth        @unit(Hz) = default(250kHz);
+        int    loraSF                          = default(11);
+
+        // Meshtastic 16-sembol preambül (LoRa standardı 8'den farklı):
+        //   t_preamble = (16 + 4.25) × Tsym(SF11/250kHz)
+        //              = 20.25 × 8.192ms = 165.9ms
+        //   LPL (SX1262 periyodik uyanış): cadInterval < t_preamble → tetikleme garantili
+        int    loraPreambleLength              = default(16);
+
+        // Meshtastic özel senkronizasyon kelimesi
+        // Standart LoRa: 0x12 (public/TTN) veya 0x34 (private)
+        // Meshtastic: 0x2B (= decimal 43) — ağ izolasyonu sağlar
+        int    loraSyncWord                    = default(0x2B);
+
+        // ── Çok-Atlama (Hop) Sınırları ────────────────────────────────────
+        // Meshtastic 2.6+: Next-Hop Routing devreye girdi (Flooding yerine)
+        //   hopLimit=3: paket en fazla 3 atlama yapabilir
+        //   maxHopLimit=7: operatör tarafından ayarlanabilecek mutlak üst sınır
+        int    hopLimit                        = default(3);
+        int    maxHopLimit                     = default(7);
+
+        // ── Görev Döngüsü (Duty Cycle) & TX Kotası ─────────────────────────
+        // Bant P (869.4-869.65 MHz) = %10 DC → 360 saniye/saat TX kotası
+        // Kayan 1-saatlik pencere (rolling time window):
+        //   Son 3600s içindeki toplam ToA toplamı ≤ 360s → TX izinli
+        //   Kota dolunca: TX Suspend (gönderim iptal) — eski paketler
+        //   pencereden çıkana dek beklenir.
+        // Uyarı: override_duty_cycle=true yalnızca DMO/lab için!
+        double dutyCycleLimit                  = default(0.10);
+        double txQuotaWindow        @unit(s)   = default(3600s);
+
+        // ── Otomatik Ölçeklendirme (Meshtastic v2.4.0+) ────────────────────
+        // Son 2 saatte duyulan aktif düğüm sayısı > autoScaleThreshold ise:
+        //   Scaled_Interval = Default_Interval × (1.0 + ((N - threshold) × coeff))
+        // Örnek: 62 düğüm, beaconInterval=10s:
+        //   Scaled = 10 × (1.0 + (22 × 0.075)) = 10 × 2.65 = 26.5s
+        // Amaç: LongFast (624ms ToA) → 50+ düğümde ~576 pkt/saat limit aşılmadan
+        //       beacon/telemetri aralıklarını organik olarak seyrelterek koruma sağlar.
+        int    autoScaleThreshold              = default(40);
+        double autoScaleCoeff                  = default(0.075);
 
         // ── CAD / Düşük Güç Parametreleri ────────────────────────────────
         // DEEP_SLEEP → cadInterval aşımı → CAD scan → preamble yoksa DEEP_SLEEP
         //                                            → preamble varsa  ACTIVE_RX
         double cadInterval    @unit(s)  = default(0.5s);   // Periyodik CAD tetik
-        double cadDuration    @unit(ms) = default(5ms);    // Tekil tarama süresi
+        double cadDuration    @unit(ms) = default(16ms);   // LongFast SF11/250kHz: 2×Tsym=16ms
         double activeRxTimeout @unit(s) = default(2.0s);   // Max alım süresi
 
         // ── Komşu Tablosu ─────────────────────────────────────────────────

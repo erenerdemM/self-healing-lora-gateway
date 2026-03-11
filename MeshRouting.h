@@ -51,7 +51,9 @@
 
 #include <map>
 #include <vector>
+#include <deque>
 #include <string>
+#include <utility>
 
 #include <omnetpp.h>
 #include "inet/common/INETDefs.h"
@@ -142,6 +144,25 @@ class MeshRouting : public cSimpleModule
     double activeRxTimeout_s_;   // Bu süre geçince ACTIVE_RX → DEEP_SLEEP
     double neighborTimeout_s_;   // Bu süre geçince komşu silindi
 
+    // Meshtastic radyo parametreleri (Band P / LongFast)
+    double loraCarrierFrequency_Hz_;  // 869.525 MHz — Band P merkez
+    double loraBandwidth_Hz_;         // 250 kHz (LongFast default)
+    int    loraSF_;                   // 11 (LongFast) — SF7..SF12
+    int    loraPreambleLength_;       // 16 sembol (Meshtastic std, LoRa default=8)
+    int    loraSyncWord_;             // 0x2B = 43 (Meshtastic özel)
+    int    hopLimit_;                 // Varsayılan maks hop: 3
+    int    maxHopLimit_;              // Mutlak üst sınır: 7
+
+    // Görev döngüsü (Duty Cycle) — Bant P %10 → 360s/saat
+    double dutyCycleLimit_;           // 0.10
+    double txQuotaWindow_s_;          // 3600s kayan pencere
+    // Kayan pencere TX log: (gönderim_zamanı, toa_saniye)
+    std::deque<std::pair<simtime_t, double>> txLog_;
+
+    // Otomatik ölçeklendirme (v2.4.0+)
+    int    autoScaleThreshold_;       // 40 düğüm üzerinde ölçekleme başlar
+    double autoScaleCoeff_;           // 0.075 / düğüm
+
     // Beacon parametreleri
     double beaconInterval_s_;    // Periyodik beacon yayın aralığı
     double beaconRssi_;          // Simüle edilmiş beacon RSSI (dBm)
@@ -189,6 +210,20 @@ class MeshRouting : public cSimpleModule
      */
     std::vector<std::pair<L3Address, NeighborEntry>>
         getSortedNeighbors(double txPower_dBm) const;
+
+    /**
+     * Band P TX kotası kontrolü (kayan 1-saatlik pencere).
+     * toaSeconds: göndermek istenen paketin hava süresi (s)
+     * Dönüş: true → TX izinli (log'a eklendi); false → TX Suspend
+     */
+    bool checkDutyCycle(double toaSeconds);
+
+    /**
+     * Son 2 saatteki aktif komşu sayısına göre ölçeklendirilmiş aralık (s).
+     * N <= threshold → baseInterval değişmeden döner.
+     * N > threshold  → baseInterval × (1 + (N−threshold) × coeff)
+     */
+    double computeScaledInterval(double baseInterval) const;
 
   // ─── CAD güç durum makinesi ─────────────────────────────────────────────────
     void enterDeepSleep();     // Radyo kapat, cadTimer başlat (15 µA)

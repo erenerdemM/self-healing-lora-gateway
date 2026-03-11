@@ -66,6 +66,24 @@ void MeshRouting::initialize(int stage)
         neighborTimeout_s_ = par("neighborTimeout");
         // par("cadDuration") @unit(ms) → getValue() milisaniye cinsinden
         cadDuration_ms_    = par("cadDuration");
+
+        // ── Meshtastic radyo parametreleri (Band P / LongFast) ───────────
+        loraCarrierFrequency_Hz_ = par("loraCarrierFrequency");
+        loraBandwidth_Hz_        = par("loraBandwidth");
+        loraSF_                  = par("loraSF");
+        loraPreambleLength_      = par("loraPreambleLength");
+        loraSyncWord_            = par("loraSyncWord");
+        hopLimit_                = par("hopLimit");
+        maxHopLimit_             = par("maxHopLimit");
+
+        // ── Görev döngüsü (Duty Cycle) — Band P %10 → 360s/saat ─────────
+        dutyCycleLimit_   = par("dutyCycleLimit");
+        txQuotaWindow_s_  = par("txQuotaWindow");
+
+        // ── Otomatik ölçeklendirme (v2.4.0+) ─────────────────────────────
+        autoScaleThreshold_ = par("autoScaleThreshold");
+        autoScaleCoeff_     = par("autoScaleCoeff");
+
         // ── Beacon parametreleri ─────────────────────────────────────────────
         beaconInterval_s_    = par("beaconInterval");
         beaconRssi_          = par("beaconRssi");
@@ -88,6 +106,19 @@ void MeshRouting::initialize(int stage)
                 << "  cadInterval=" << cadInterval_s_ << "s"
                 << "  CAD=" << cadDuration_ms_ << "ms"
                 << "  α=" << alpha_ << " β=" << beta_ << " γ=" << gamma_ << "\n";
+
+        // ── Meshtastic Band P başlangıç logu ────────────────────────────
+        const double quota_s = txQuotaWindow_s_ * dutyCycleLimit_;
+        EV_INFO << "[MeshRouting] Meshtastic EU_868 Bant P yapılandırması:\n"
+                << "  CF="     << loraCarrierFrequency_Hz_ / 1e6  << "MHz"
+                << "  BW="     << loraBandwidth_Hz_ / 1e3          << "kHz"
+                << "  SF"      << loraSF_
+                << "  preamble=" << loraPreambleLength_             << " sembol"
+                << "  syncWord=0x" << std::hex << loraSyncWord_ << std::dec << "\n"
+                << "  txPower=" << txPower_dBm_ << "dBm"
+                << "  hopLimit=" << hopLimit_ << "/" << maxHopLimit_
+                << "  DC=" << dutyCycleLimit_ * 100.0 << "%"
+                << "  TX kotası=" << quota_s << "s/saat\n";
     }
 
     if (stage == inet::INITSTAGE_NETWORK_LAYER) {
@@ -115,7 +146,13 @@ void MeshRouting::handleMessage(cMessage *msg)
 
         if (msg == beaconTimer_) {
             broadcastBeaconToMeshNeighbors();
-            scheduleAt(simTime() + beaconInterval_s_, beaconTimer_);
+            // Otomatik ölçeklendirme: yoğun ağda beacon aralığını seyrelterek
+            // Band P TX kotasının (360s/saat) dolmasını engelle
+            const double scaledInterval = computeScaledInterval(beaconInterval_s_);
+            if (scaledInterval > beaconInterval_s_)
+                EV_INFO << "[MeshRouting] AutoScale: beaconInterval "
+                        << beaconInterval_s_ << "s → " << scaledInterval << "s\n";
+            scheduleAt(simTime() + scaledInterval, beaconTimer_);
             return;
         }
 
@@ -195,6 +232,19 @@ void MeshRouting::handleMessage(cMessage *msg)
             // V2: packetDropSignal emit edilecek
         }
         else {
+            // ── Band P TX kotası kontrolü (kayan 1-saatlik pencere) ───────
+            // LongFast/SO B referans ToA: ~0.624s (PDF Kapasite Tablosu)
+            // Gerçek ToA'yı hesaplamak için SF/BW/PL runtime'da bilinmeli (V2).
+            // V1 referans: LongFast 50B → 0.624s
+            const double ref_toa_s = 0.624;
+            if (!checkDutyCycle(ref_toa_s)) {
+                EV_WARN << "[MeshRouting] TX SUSPEND aktif — paket ertelendi "
+                           "(Band P %10 DC kotası doldu).\n";
+                enterDeepSleep();
+                delete msg;
+                return;
+            }
+
             EV_INFO << "[MeshRouting] Seçilen next-hop: " << nextHop
                     << "  → ACTIVE_TX başlıyor.\n";
 
@@ -254,6 +304,64 @@ void MeshRouting::finish()
     cancelAndDelete(cadEndTimer_);    cadEndTimer_    = nullptr;
     cancelAndDelete(rxTimeoutTimer_); rxTimeoutTimer_ = nullptr;
     cancelAndDelete(beaconTimer_);    beaconTimer_    = nullptr;
+}
+
+// =============================================================================
+// Band P Görev Döngüsü — Kayan 1-Saatlik Pencere
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// checkDutyCycle
+//   toaSeconds: göndermek istenen paketin hava süresi (s)
+//   Dönüş: true → TX izinli (log'a eklendi); false → TX Suspend
+// -----------------------------------------------------------------------------
+bool MeshRouting::checkDutyCycle(double toaSeconds)
+{
+    const simtime_t now         = simTime();
+    const simtime_t windowStart = now - txQuotaWindow_s_;
+
+    // Pencere dışındaki eski kayıtları temizle
+    while (!txLog_.empty() && txLog_.front().first < windowStart)
+        txLog_.pop_front();
+
+    // Son txQuotaWindow_s_ içindeki toplam TX süresi
+    double usedSeconds = 0.0;
+    for (const auto& entry : txLog_)
+        usedSeconds += entry.second;
+
+    const double quota = txQuotaWindow_s_ * dutyCycleLimit_;
+    if (usedSeconds + toaSeconds > quota) {
+        EV_WARN << "[MeshRouting] TX SUSPEND: Band P %"
+                << dutyCycleLimit_ * 100.0 << " DC kotası doldu!"
+                << "  Kullanılan=" << usedSeconds << "s"
+                << "  İstenen=" << toaSeconds << "s"
+                << "  Kota=" << quota << "s/saat\n";
+        return false;
+    }
+    txLog_.push_back({now, toaSeconds});
+    return true;
+}
+
+// -----------------------------------------------------------------------------
+// computeScaledInterval
+//   Son 2 saatteki aktif komşu sayısına göre ölçeklendirilmiş aralık döndür.
+//   N ≤ threshold → baseInterval değişmeden döner.
+//   N > threshold → baseInterval × (1 + (N−threshold) × coeff)
+// -----------------------------------------------------------------------------
+double MeshRouting::computeScaledInterval(double baseInterval) const
+{
+    int activeNodes = 0;
+    const simtime_t recentThreshold = simTime() - 7200.0;  // Son 2 saat
+    for (const auto& kv : neighborTable_) {
+        if (kv.second.lastSeen >= recentThreshold)
+            ++activeNodes;
+    }
+    if (activeNodes <= autoScaleThreshold_)
+        return baseInterval;
+
+    const double scaled = baseInterval *
+        (1.0 + ((activeNodes - autoScaleThreshold_) * autoScaleCoeff_));
+    return scaled;
 }
 
 // =============================================================================

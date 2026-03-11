@@ -62,6 +62,16 @@ void HybridRouting::initialize(int stage)
         activeRxTimeout_s_       = par("activeRxTimeout");
         neighborTimeout_s_       = par("neighborTimeout");
 
+        // ── LoRaWAN Gateway downlink TX parametreleri (BTK KET / ETSI EN 300 220-2) ─
+        bandMTxPower_dBm_ = par("bandMTxPower_dBm");
+        bandMDutyCycle_   = par("bandMDutyCycle");
+        rx2TxPower_dBm_   = par("rx2TxPower_dBm");
+        rx2DutyCycle_     = par("rx2DutyCycle");
+        rx2Frequency_Hz_  = par("rx2Frequency");
+        txQuotaWindow_s_  = par("txQuotaWindow");
+        antennaGain_dBi_  = par("antennaGain_dBi");
+        numDemodulators_  = par("numDemodulators");
+
         // ── Beacon / kuyruk parametreleri ──────────────────────────────
         beaconInterval_s_ = par("beaconInterval");
         beaconRssi_       = par("beaconRssi");
@@ -95,15 +105,40 @@ void HybridRouting::initialize(int stage)
         // ── Güç durum makinesi başlangıcı ─────────────────────────────────────
         currentPowerState_ = PowerState::DEEP_SLEEP;
 
+        // ── İşlemci gecikmesi (STM32 SPI+DMA+ISR modeli) ─────────────────────
+        processingDelay_ms_ = par("processingDelay");
+        EV_INFO << "[HybridRouting] processingDelay=" << processingDelay_ms_
+                << "ms (0=sıfır-gecikme, >0=STM32 gerçekçi model)\n";
+
         // ── İstatistik sinyallerini kaydet ────────────────────────────────────
         powerStateSignal_      = registerSignal("powerState");
         routingCostSignal_     = registerSignal("routingCost");
         congestionEventSignal_ = registerSignal("congestionEvent");
+        droppedPacketSignal_   = registerSignal("droppedPacket");
 
         // ── Zamanlayıcıları oluştur ───────────────────────────────────────────
         backhaulTimer_ = new cMessage("backhaulCheckTimer");
         cadTimer_      = new cMessage("cadTimer");
         sleepTimer_    = new cMessage("rxTimeoutTimer");
+
+        // ── LoRaWAN GW BTK/ETSI profil başlangıç logu ─────────────────────
+        {
+            const double effTx      = bandMTxPower_dBm_ - antennaGain_dBi_;
+            const double bandM_quot = txQuotaWindow_s_ * bandMDutyCycle_;
+            const double rx2_quot   = txQuotaWindow_s_ * rx2DutyCycle_;
+            EV_INFO << "[HybridRouting] LoRaWAN GW BTK/ETSI Profil:\n"
+                    << "  SX1303+SX1250: -141dBm hassasiyet,  "
+                    << numDemodulators_ << " demodülatör (8ch×2)\n"
+                    << "  Band M (868.0-868.6MHz): TX=" << effTx << "dBm ERP"
+                    << "  DC=" << bandMDutyCycle_ * 100.0 << "%"
+                    << "  kota=" << bandM_quot << "s/saat\n"
+                    << "  Band P RX2 (" << rx2Frequency_Hz_ / 1e6 << "MHz): TX="
+                    << rx2TxPower_dBm_ << "dBm"
+                    << "  DC=" << rx2DutyCycle_ * 100.0 << "%"
+                    << "  kota=" << rx2_quot << "s/saat\n"
+                    << "  Anten kazancı=" << antennaGain_dBi_
+                    << "dBi → EIRP düzeltmesi uygulandı\n";
+        }
 
         EV_INFO << "[HybridRouting] initialize tamamlandı."
                 << "  backhaulInterval=" << backhaulCheckInterval_s_ << "s"
@@ -122,6 +157,13 @@ void HybridRouting::initialize(int stage)
         scheduleAt(simTime() + beaconInterval_s_, beaconTimer_);
         EV_INFO << "[HybridRouting] Beacon timer kuruldu: t+" << beaconInterval_s_
                 << "s  meshAddress=" << par("meshAddress").stringValue() << "\n";
+
+        // İşlemci gecikmesi zamanlayıcısı (geciktirilmiş routing kararı için)
+        if (processingDelay_ms_ > 0.0) {
+            processTimer_ = new cMessage("processingDelayTimer");
+            EV_INFO << "[HybridRouting] ProcessTimer hazır — STM32 ISR gecikmesi="
+                    << processingDelay_ms_ << "ms\n";
+        }
 
         // Tek seferlik backhaul kesme zamanlayıcısı
         if (backhaulCutTime_s_ > 0) {
@@ -188,6 +230,14 @@ void HybridRouting::handleMessage(cMessage *msg)
             return;
         }
 
+        // ── processingDelayTimer: STM32 ISR gecikmesi bitti, routing kararı ver
+        if (processTimer_ && msg == processTimer_) {
+            cMessage *pm = pendingMsg_;
+            pendingMsg_  = nullptr;
+            if (pm) processRouteRequest(pm);
+            return;
+        }
+
         if (msg == backhaulTimer_) {
             checkBackhaulStatus();
             // Bir sonraki kontrol döngüsünü planla
@@ -227,48 +277,26 @@ void HybridRouting::handleMessage(cMessage *msg)
 
         EV_INFO << "[HybridRouting] routeRequestIn: yönlendirme talebi alındı.\n";
 
-        purgeStaleNeighbors();
-
-        if (checkBackhaulAlive()) {
-
-            // ─────────────────────────────────────────────────────────────────
-            // SENARYO A — İnternet VAR
-            // Paketi doğrudan Ethernet arayüzüne (Network Server'a) ilet.
-            // ─────────────────────────────────────────────────────────────────
-            EV_WARN << "[HybridRouting] ◆ SENARYO A — İNTERNET VAR ◆\n"
-                    << "  t=" << simTime() << "s  addr=" << par("meshAddress").stringValue() << "\n"
-                    << "  Sensör verisi doğrudan NetworkServer'a iletiliyor.\n"
-                    << "  MESH'E SENSÖR VERİSİ GÖNDERİLMİYOR — Sadece beacon yayınlanır.\n";
-
-            // Kararı üst katmana sinyal et: kind=0 → doğrudan Ethernet çıkışı
-            // V3'te gerçek payload taşıma eklenecek.
-            cMessage *decision = new cMessage("routeDecision_direct");
-            decision->setKind(0);
-            if (gate("routeDecisionOut")->isConnected())
-                send(decision, "routeDecisionOut");
-            else {
-                EV_WARN << "[HybridRouting] routeDecisionOut bağlı değil — karar düşürüldü (V1).\n";
-                delete decision;
+        // ── STM32 İşlemci Gecikmesi Modeli ───────────────────────────────────
+        // Gerçek donanımda SX1303 LoRa MAC → SPI → DMA → ISR → RAM kopyalama
+        // ~5-15ms sürer. processingDelay_ms_ > 0 ise mesajı geciktirerek
+        // processTimer_ ile doğru zamanda işle.
+        if (processingDelay_ms_ > 0.0 && processTimer_) {
+            if (pendingMsg_) {
+                // Kuyrukta zaten bekleyen mesaj var — Drop-Tail (STM32 single buffer)
+                EV_WARN << "[HybridRouting] İşlemci meşgul — Drop-Tail (1 paket düşürüldü)\n";
+                emit(droppedPacketSignal_, (long)1);
+                delete msg;
+            } else {
+                pendingMsg_ = msg;
+                scheduleAt(simTime() + processingDelay_ms_ / 1000.0, processTimer_);
+                EV_INFO << "[HybridRouting] STM32 ISR gecikmesi: " << processingDelay_ms_
+                        << "ms sonra routing kararı verilecek.\n";
             }
-
-            delete msg;
-
-        } else {
-
-            // ─────────────────────────────────────────────────────────────────
-            // SENARYO B — İnternet YOK (Failover)
-            // Paketin çöpe gitmesine izin yok!
-            // En iyi komşu Gateway'i bul → SensorDataPacket olarak mesh'e yayınla.
-            // ─────────────────────────────────────────────────────────────────
-            EV_WARN << "[HybridRouting] ◆ SENARYO B — İNTERNET KESİNTİSİ ◆\n"
-                    << "  t=" << simTime() << "s  addr=" << par("meshAddress").stringValue() << "\n"
-                    << "  Sensör verisi MESH ağına aktarılıyor!\n"
-                    << "  En düşük C_i'ye sahip ONLINE-GW hedef seçiliyor...\n";
-
-            forwardToMesh(msg);
-            // forwardToMesh msg'yi kendi yönetir (ya iletir ya siler)
+            return;
         }
-
+        // processingDelay == 0: eski sıfır-gecikme davranışı
+        processRouteRequest(msg);
         return;
     }
 
@@ -297,6 +325,39 @@ void HybridRouting::handleMessage(cMessage *msg)
 }
 
 // =============================================================================
+// processRouteRequest — routeRequestIn gelen paketi işle
+//   processingDelay_ > 0 ise processTimer_ sonrasında çağrılır.
+//   processingDelay_ = 0 ise doğrudan handleMessage'dan senkron çağrılır.
+// =============================================================================
+void HybridRouting::processRouteRequest(cMessage *msg)
+{
+    purgeStaleNeighbors();
+
+    if (checkBackhaulAlive()) {
+        EV_WARN << "[HybridRouting] ◆ SENARYO A — İNTERNET VAR ◆\n"
+                << "  t=" << simTime() << "s  addr=" << par("meshAddress").stringValue() << "\n"
+                << "  Sensör verisi doğrudan NetworkServer'a iletiliyor.\n"
+                << "  MESH'E SENSÖR VERİSİ GÖNDERİLMİYOR — Sadece beacon yayınlanır.\n";
+
+        cMessage *decision = new cMessage("routeDecision_direct");
+        decision->setKind(0);
+        if (gate("routeDecisionOut")->isConnected())
+            send(decision, "routeDecisionOut");
+        else {
+            EV_WARN << "[HybridRouting] routeDecisionOut bağlı değil — karar düşürüldü (V1).\n";
+            delete decision;
+        }
+        delete msg;
+    } else {
+        EV_WARN << "[HybridRouting] ◆ SENARYO B — İNTERNET KESİNTİSİ ◆\n"
+                << "  t=" << simTime() << "s  addr=" << par("meshAddress").stringValue() << "\n"
+                << "  Sensör verisi MESH ağına aktarılıyor!\n"
+                << "  En düşük C_i'ye sahip ONLINE-GW hedef seçiliyor...\n";
+        forwardToMesh(msg);
+    }
+}
+
+// =============================================================================
 // finish — simülasyon sonu temizlik
 // =============================================================================
 void HybridRouting::finish()
@@ -306,6 +367,8 @@ void HybridRouting::finish()
     cancelAndDelete(sleepTimer_);      sleepTimer_        = nullptr;
     cancelAndDelete(beaconTimer_);     beaconTimer_       = nullptr;
     cancelAndDelete(backhaulCutTimer_); backhaulCutTimer_ = nullptr;
+    cancelAndDelete(processTimer_);    processTimer_      = nullptr;
+    if (pendingMsg_) { delete pendingMsg_; pendingMsg_ = nullptr; }
 
     EV_INFO << "[HybridRouting] finish: zamanlayıcılar temizlendi. "
             << "Komşu tablosu boyutu: " << neighborTable_.size() << "\n";
@@ -330,12 +393,31 @@ void HybridRouting::checkBackhaulStatus()
     // ── Kuyruk doluluk dinamiği ───────────────────────────────────────────────
     // Backhaul UP: WAN kanal boşaltır, kuyruk küçük kalır
     // Backhaul DOWN: sensör paketleri birikir, kuyruk dolar
+    //
+    // Gerçek STM32 kapasitesi: maxQueueSize_ × ~50B ≈ 50 × 50B = 2.5 KB
+    // Bu modelde "occ = 1.0" → maxQueueSize_ pakede eşdeğer doluluk.
+    // Drop-Tail: occ zaten >= 1.0 iken yeni paketler düşürülür.
     if (isBackhaulUp_) {
         currentQueueOcc_ = 0.985 * currentQueueOcc_
                          + 0.0005 * sensorPacketRate_;
     } else {
-        currentQueueOcc_ = std::min(1.0, currentQueueOcc_
-                         + 0.0003 * sensorPacketRate_);
+        const double incoming = 0.0003 * sensorPacketRate_;
+        const double projected = currentQueueOcc_ + incoming;
+
+        // Drop-Tail: kuyruk zaten %100 doluysa gelen paketleri say ve düşür
+        if (currentQueueOcc_ >= 1.0) {
+            // Her 100ms kontrol aralığında sensorPacketRate_*0.1 paket gelmiştir;
+            // hepsi düşürülmüştür → Drop-Tail sinyali gönder
+            const long droppedNow = static_cast<long>(sensorPacketRate_ * backhaulCheckInterval_s_);
+            if (droppedNow > 0) {
+                emit(droppedPacketSignal_, droppedNow);
+                EV_WARN << "[HybridRouting] DROP-TAIL: kuyruk DOLU (%"
+                        << currentQueueOcc_ * 100.0 << ") — " << droppedNow
+                        << " paket düşürüldü (STM32 SRAM: maxQueueSize="
+                        << maxQueueSize_ << " pkt)\n";
+            }
+        }
+        currentQueueOcc_ = std::min(1.0, projected);
     }
     currentQueueOcc_ = std::max(0.0, currentQueueOcc_);
 
@@ -899,5 +981,59 @@ void HybridRouting::broadcastBeaconToMeshNeighbors()
                 << par("meshAddress").stringValue()
                 << " — BACKHAUL KOPUK. Komşular failover hedefi olarak bu GW'yi seçMEYECEK.\n";
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Band M (868.0-868.6 MHz) duty-cycle kota kontrolü — kayan 1-saatlik pencere
+// Parametre toaSeconds: planlanmakta olan iletimin havada kalış süresi (saniye)
+// Dönüş: true → TX izinli, çağıran txLogBandM_'e kaydet; false → TX askıya al
+bool HybridRouting::checkBandMDutyCycle(double toaSeconds)
+{
+    const simtime_t now         = simTime();
+    const simtime_t windowStart = now - txQuotaWindow_s_;
+    // Pencere dışına çıkan eski kayıtları temizle
+    while (!txLogBandM_.empty() && txLogBandM_.front().first < windowStart)
+        txLogBandM_.pop_front();
+    // Penceredeki toplam TX süresini hesapla
+    double used = 0.0;
+    for (const auto& e : txLogBandM_) used += e.second;
+    const double quota = txQuotaWindow_s_ * bandMDutyCycle_;   // saniye / pencere
+    if (used + toaSeconds > quota) {
+        EV_WARN << "[HybridRouting] Band M TX SUSPEND: %"
+                << bandMDutyCycle_ * 100.0 << " DC doldu!"
+                << "  kullanılan=" << used << "s  kota=" << quota << "s\n";
+        return false;
+    }
+    txLogBandM_.push_back({now, toaSeconds});
+    return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Band P / RX2 (869.525 MHz) duty-cycle kota kontrolü
+bool HybridRouting::checkRx2DutyCycle(double toaSeconds)
+{
+    const simtime_t now         = simTime();
+    const simtime_t windowStart = now - txQuotaWindow_s_;
+    while (!txLogRx2_.empty() && txLogRx2_.front().first < windowStart)
+        txLogRx2_.pop_front();
+    double used = 0.0;
+    for (const auto& e : txLogRx2_) used += e.second;
+    const double quota = txQuotaWindow_s_ * rx2DutyCycle_;
+    if (used + toaSeconds > quota) {
+        EV_WARN << "[HybridRouting] RX2 TX SUSPEND: %"
+                << rx2DutyCycle_ * 100.0 << " DC doldu!"
+                << "  kullanılan=" << used << "s  kota=" << quota << "s\n";
+        return false;
+    }
+    txLogRx2_.push_back({now, toaSeconds});
+    return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Anten kazancı EIRP düzeltmesi:  ERP (dBm) = P_tx - G_ant (dBi)
+// BTK KET: Band M maksimum 14 dBm ERP  →  P_tx ≤ 14 + antennaGain_dBi_
+double HybridRouting::effectiveTxPower(double txPower_dBm) const
+{
+    return txPower_dBm - antennaGain_dBi_;
 }
 

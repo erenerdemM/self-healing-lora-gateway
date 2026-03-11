@@ -4,7 +4,7 @@
 // Donanım (PDF Bölüm 5.1.2):
 //   Heltec HT-CT62: SX1262 (LoRa) + ESP32-C3 (MCU)
 //   Batarya: 3.7 V × 3500 mAh = 46 620 J (Li-ion)
-//   Anten: 868 MHz PCB/SMA
+//   Anten: 869 MHz PCB/SMA (Band P: 869.4-869.65 MHz)
 //
 // Görev:
 //   - HybridGateway'ler arasında paketleri iletir (store-and-forward)
@@ -51,8 +51,12 @@ module MeshNode extends AdhocHost
 
         //   DEEP_SLEEP : 15 µA × 3.7 V = 0.0000555 W
         wlan[*].radio.energyConsumer.sleepPowerConsumption          = default(0.0000555W);
-        //   CAD (receiverIdle olarak modellenir): 10 mA × 3.7 V = 0.037 W
-        wlan[*].radio.energyConsumer.receiverIdlePowerConsumption   = default(0.037W);
+        //   LPL zamanı-ortalamalı güç (receiverIdle modeli, LongFast preset):
+        //   SF11/BW250kHz: Tsym=8.192ms, cadDur=16ms, cadInterval=100ms
+        //   P_avg = (16/116)×10mA×3.7V + (100/116)×15µA×3.7V
+        //         = 5.11mW + 0.048mW = 5.16mW → 0.00516W
+        //   Pil ömrü: 46620J / 0.00516W = 105 gün ✓ (SF12'den 2.8× daha verimli)
+        wlan[*].radio.energyConsumer.receiverIdlePowerConsumption   = default(0.00516W);
         //   ACTIVE_RX : 120 mA × 3.7 V = 0.444 W
         wlan[*].radio.energyConsumer.receiverReceivingPowerConsumption = default(0.444W);
         //   ACTIVE_TX (14 dBm, SX1262): 120 mA × 3.7 V = 0.444 W
@@ -65,11 +69,16 @@ module MeshNode extends AdhocHost
         meshRouting.gamma               = default(0.3);
         meshRouting.congestionThreshold = default(0.8);   // %80 eşiği
 
-        // CAD durum makinesi
-        meshRouting.cadInterval         = default(0.5s);  // Ne sıklıkta uyan
-        meshRouting.cadDuration         = default(5ms);   // Tekil CAD tarama
+        // LPL (Low Power Listening) — Meshtastic SX1262 gerçekçi parametreler
+        // LongFast preset: SF11 / BW=250kHz
+        //   Tsym = 2^11/250000 = 8.192ms,  CadSymbolNum=2
+        //   cadDuration = 2 × Tsym = 16.384ms ≈ 16ms  (eski: 65ms — SF12/125kHz idi!)
+        //   16-sembol preambül = 131ms; cadInterval=100ms → her 116ms'de 1 tarama
+        //   Tespitte güvenlik payı: 131 > 100 → her zaman en az 31ms = ~4 sembol yakalanır ✓
+        meshRouting.cadInterval         = default(0.1s);
+        meshRouting.cadDuration         = default(16ms);   // eski: 65ms (SF12-biased!)
         meshRouting.activeRxTimeout     = default(2.0s);  // Max alım süresi
-        meshRouting.txPower_dBm         = default(14.0);  // SX1262 TX gücü
+        meshRouting.txPower_dBm         = default(22.0);  // SX1262 hw üst sınır 22dBm (Band P yasal: 27dBm)
 
         // Komşu zaman aşımı
         meshRouting.neighborTimeout     = default(30.0s);

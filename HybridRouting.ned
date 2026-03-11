@@ -32,6 +32,30 @@ simple HybridRouting
 
         // TX gücü (maliyet hesabında pay olarak kullanılır)
         double txPower_dBm = default(14.0);         // dBm
+
+        // ── LoRaWAN Gateway Downlink TX Parametreleri (BTK KET / ETSI EN 300 220-2) ──
+        // Bant M (868.0–868.6 MHz): Join-Accept, ACK, MAC komutları
+        //   Max: 14 dBm ERP | Duty Cycle: %1 → 36 s/saat kota (kayan pencere)
+        double bandMTxPower_dBm   = default(14.0);
+        double bandMDutyCycle     = default(0.01);
+
+        // Bant P (869.4–869.65 MHz): RX2 penceresi
+        //   Max: +27 dBm (500 mW) | Duty Cycle: %10 → 360 s/saat kota
+        //   LoRaWAN standardı bu bantta SF12/BW125kHz kullanır (varsayılan)
+        double rx2TxPower_dBm     = default(27.0);
+        double rx2DutyCycle       = default(0.10);
+        double rx2Frequency @unit(Hz) = default(869.525MHz);
+
+        // Kayan zaman penceresi (DC hesabı için)
+        double txQuotaWindow @unit(s) = default(3600s);
+
+        // Anten kazancı EIRP düzeltmesi (dBi)
+        //   TX_eff = txPower_dBm - antennaGain_dBi  ≤ bandMTxPower_dBm
+        //   omnetpp.ini'de 8 dBi anten varsa: antennaGain_dBi = 8.0 set edilmeli
+        double antennaGain_dBi    = default(0.0);
+
+        // SX1303 demodülatör sayısı (bilgi amaçlı; log'a yazdırılır)
+        int    numDemodulators    = default(16);
         // Backhaul (internet) başlangıç durumu
         //   true  → ONLINE: paketler doğrudan NetworkServer'a
         //   false → FAILOVER: en iyi komşu GW'ye mesh üzerińden
@@ -57,6 +81,12 @@ simple HybridRouting
         // Tek seferlik backhaul kesme zamanı (> 0 ise o anda isBackhaulUp_=false)
         // omnetpp.ini: **.hybridGW1.routingAgent.backhaulCutTime = 200s
         double backhaulCutTime @unit(s) = default(-1s);
+
+        // ── İşlemci Gecikmesi (STM32 PCB gerçekliği) ─────────────────────
+        // SX1303 SPI paketi okuma → DMA kopyalama → CPU ISR → routing kararı
+        // Gerçek STM32H7 ölçümleri: 5–15 ms arası (SPI@10MHz, 51B paket)
+        // 0.0 bırakılırsa eski sıfır-gecikme davranışı korunur (backward compat).
+        double processingDelay @unit(ms) = default(5ms);  // STM32 ISR + SPI + DMA
 
         // Runtime backhaul bayrağı — PacketForwarder bu parametreyi okuyarak
         // mesh failover kararı verir. HybridRouting.cc tarafından dinamik olarak
@@ -84,6 +114,10 @@ simple HybridRouting
         //   congestionEvent: Darboğaz tespiti → 2. komşuya geçis sayisi
         @signal[congestionEvent](type=long);
         @statistic[congestionEvent](title="Darboğaz Olayi"; source=congestionEvent; record=count,vector);
+        //   droppedPacket: Drop-Tail — kuyruk dolduğunda düşürülen paket sayısı
+        //   Gerçek STM32 SRAM modeli: maxQueueSize=50 pkt × ~50B = ~2.5KB sınırı
+        @signal[droppedPacket](type=long);
+        @statistic[droppedPacket](title="Dusurulen Paket (Drop-Tail)"; source=droppedPacket; record=count,vector);
 
         @display("i=block/routing");
         @class(HybridRouting);
