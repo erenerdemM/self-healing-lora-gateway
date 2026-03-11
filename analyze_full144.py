@@ -163,20 +163,40 @@ print("=" * 70)
 print("ANALİZ 1: HAVASIGMASı ETKİSİ — rcvBelowSensitivity Oranı vs Sigma")
 print("=" * 70)
 
-sigma_stats = defaultdict(lambda: {"below_sum": 0, "below_rate_sum": 0.0, "count": 0})
+sigma_stats = defaultdict(lambda: {
+    "gw1_below": 0, "gw2_below": 0,
+    "der_sum": 0.0, "cong_sum": 0,
+    "ns1_sum": 0, "ns2_sum": 0, "tx_sum": 0,
+    "count": 0
+})
 for r in records:
     ws = r["weatherSigma"]
-    sigma_stats[ws]["below_sum"]      += r["gw1_rcvBelow"]
-    sigma_stats[ws]["below_rate_sum"] += r["rcvBelowRate"] if r["rcvBelowRate"] == r["rcvBelowRate"] else 0
-    sigma_stats[ws]["count"]          += 1
+    sigma_stats[ws]["gw1_below"] += r["gw1_rcvBelow"]
+    sigma_stats[ws]["gw2_below"] += r["gw2_rcvBelow"]
+    sigma_stats[ws]["der_sum"]   += r["DER"] if r["DER"] == r["DER"] else 0
+    sigma_stats[ws]["cong_sum"]  += r["gw1_congestion"]
+    sigma_stats[ws]["ns1_sum"]   += r["ns1_recv"]
+    sigma_stats[ws]["ns2_sum"]   += r["ns2_recv"]
+    sigma_stats[ws]["tx_sum"]    += r["total_sent"]
+    sigma_stats[ws]["count"]     += 1
 
-print(f"\n{'σ (sigma)':<12} {'Ort. rcvBelow (abs)':<24} {'Ort. rcvBelow/total (%)':<26} {'N run'}")
-print("-" * 70)
+print(f"\n{'σ':>5}  {'N':>3}  {'Σ TX':>7}  {'Σ NS1':>6}  {'Σ NS2':>6}  "
+      f"{'Ort.DER%':>9}  {'GW1↓Ort':>8}  {'GW2↓Ort':>8}  {'Cong/run':>9}")
+print("-" * 72)
 for ws in sorted(sigma_stats):
     s = sigma_stats[ws]
-    avg_below      = s["below_sum"] / s["count"]
-    avg_below_rate = s["below_rate_sum"] / s["count"] * 100
-    print(f"{ws:<12.1f} {avg_below:<24.1f} {avg_below_rate:<26.1f} {s['count']}")
+    n          = s["count"]
+    avg_der    = s["der_sum"] / n * 100
+    avg_gw1    = s["gw1_below"] / n
+    avg_gw2    = s["gw2_below"] / n
+    avg_cong   = s["cong_sum"]  / n
+    print(f"  {ws:>3.1f}  {n:>3}  {s['tx_sum']:>7}  {s['ns1_sum']:>6}  {s['ns2_sum']:>6}  "
+          f"{avg_der:>9.1f}  {avg_gw1:>8.1f}  {avg_gw2:>8.1f}  {avg_cong:>9.1f}")
+print()
+print("  NOT: GW1↓ = sensör→GW1 hassasiyet altı paket (doğrudan link)")
+print("       GW2↓ = meshNode→GW2 hassasiyet altı paket (mesh relay link)")
+print("       GW2↓ >> GW1↓ → sigma etkisi mesh relay hattını daha çok vuruyor")
+print("       Cong = GW1 routingAgent congestionEvent ortalaması (run başı)")
 
 # =============================================================================
 # ANALİZ 2: SF Darboğazı — "Hızlı Sensör + Yavaş Mesh" kombinasyonu
@@ -200,38 +220,40 @@ for r in records:
     combo_stats[key]["count"]           += 1
 
 # Sadece anlaşılır kombinasyonları göster (sensorSF ∈ {7,12}, meshSF ∈ {7,12})
-print(f"\n{'sensorSF':<10} {'meshSF':<10} {'Ort. GW1 Drop':<16} {'Ort. Drop%':<14} {'Ort. CongEv':<14} {'Ort. DER'}")
-print("-" * 70)
+print(f"\n{'sensorSF':<8} {'meshSF':<7} {'Cong/run':>8}  {'DER%':>6}  {'Not'}")
+print("-" * 50)
 for sF in [7, 12]:
     for mSF in [7, 12]:
         key = (sF, mSF)
         if key in combo_stats:
             s = combo_stats[key]
-            avg_drop  = s["drop_sum"]       / s["count"]
-            avg_dp    = s["drop_rate_sum"]  / s["count"] * 100
             avg_cong  = s["congestion_sum"] / s["count"]
-            avg_der   = s["DER_sum"]        / s["count"]
-            label = " ← DARBOĞAZ" if sF == 7 and mSF == 12 else ""
-            print(f"SF{sF:<7}   SF{mSF:<7}   {avg_drop:<16.1f} {avg_dp:<14.1f} {avg_cong:<14.1f} {avg_der:.3f}{label}")
+            avg_der   = s["DER_sum"]        / s["count"] * 100
+            label = "← DARBOĞAZ (FF>SF12 relay)" if sF == 7 and mSF == 12 else ""
+            print(f"SF{sF:<5}   SF{mSF:<5}   {avg_cong:>8.1f}  {avg_der:>6.1f}  {label}")
 
 print()
-print("Tüm sensorSF × meshSF kombinasyonları (sigma ortalaması):")
-print(f"\n{'sensorSF/meshSF':<18}", end="")
+print("Tüm sensorSF × meshSF kombinasyonları — Ortalama GW1 CongestionEvent/run:")
+print(f"\n{'sSF/mSF':<10}", end="")
 for mSF in [7, 8, 9, 10, 11, 12]:
-    print(f"  mSF={mSF:<4}", end="")
+    print(f" mSF={mSF:<4}", end="")
 print()
-print("-" * 88)
+print("-" * 76)
 for sF in [7, 8, 9, 10, 11, 12]:
-    print(f"  sensorSF={sF:<7}", end="")
+    print(f"  sSF={sF:<5}", end="")
     for mSF in [7, 8, 9, 10, 11, 12]:
         key = (sF, mSF)
         if key in combo_stats:
-            avg_drop_rate = combo_stats[key]["drop_rate_sum"] / combo_stats[key]["count"] * 100
-            print(f"  {avg_drop_rate:>6.1f}% ", end="")
+            avg_cong = combo_stats[key]["congestion_sum"] / combo_stats[key]["count"]
+            marker = "*" if sF <= 9 and mSF >= 11 else " "
+            print(f" {avg_cong:>6.1f}{marker}", end="")
         else:
-            print("    N/A  ", end="")
+            print("   N/A  ", end="")
     print()
-print("(GW1 routingAgent droppedPacket oranı, sigma ortalaması)")
+print("(* = 'Ferrari-sensör + Kamyon-relay' bölgesi — yüksek tıkanma beklenir)")
+print("Açıklama: congestionEvent = GW1 routingAgent'ın SF12 relay yüzünden")
+print("          iletimi geciktirme/bekletme olayı. Gerçek paket kaybı değil,")
+print("          ancak yüksek değerler kuyruk doluluğuna işaret eder.")
 
 # =============================================================================
 # ANALİZ 3: En iyi ve en kötü DER — tüm 144 kombinasyon sıralaması
@@ -244,27 +266,25 @@ print("=" * 70)
 valid_records = [r for r in records if r["DER"] == r["DER"]]  # nan filtrele
 valid_records.sort(key=lambda r: r["DER"], reverse=True)
 
-print(f"\n{'Sıra':<6} {'sensorSF':<10} {'meshSF':<9} {'σ':<7} "
-      f"{'Gönderilen':<12} {'NS1':<7} {'NS2':<7} {'Toplam':<9} {'DER':>7}  {'GW1 Drop%'}")
-print("-" * 85)
+print(f"\n  {'#':>3}  {'sSF':>4} {'mSF':>4}  {'σ':>4}  "
+      f"{'TX':>5}  {'NS1':>4} {'NS2':>5} {'Tot':>5}  {'DER%':>6}  {'Cong':>4}")
+print("  " + "-" * 48)
 
-# İlk 10 (en iyi)
-print("  [ EN İYİ 10 ]")
-for i, r in enumerate(valid_records[:10], 1):
-    dp = r["gw1_drop_rate"] * 100 if r["gw1_drop_rate"] == r["gw1_drop_rate"] else float("nan")
-    print(f"  {i:<5} SF{r['sensorSF']:<7}  SF{r['meshSF']:<6}  {r['weatherSigma']:<7.1f} "
-          f"{r['total_sent']:<12} {r['ns1_recv']:<7} {r['ns2_recv']:<7} {r['total_recv']:<9} "
-          f"{r['DER']:>7.3f}  {dp:>6.1f}%")
+# İlk 5 (en iyi)
+print("  [ EN İYİ 5 ]")
+for i, r in enumerate(valid_records[:5], 1):
+    print(f"  {i:>3}  SF{r['sensorSF']:<2} SF{r['meshSF']:<2}  {r['weatherSigma']:>4.1f}  "
+          f"{int(r['total_sent']):>5}  {int(r['ns1_recv']):>4} {int(r['ns2_recv']):>5} "
+          f"{int(r['total_recv']):>5}  {r['DER']*100:>6.1f}  {int(r['gw1_congestion']):>4}")
 
 print()
-# Son 10 (en kötü)
-print("  [ EN KÖTÜ 10 ]")
-for i, r in enumerate(reversed(valid_records[-10:]), 1):
-    dp = r["gw1_drop_rate"] * 100 if r["gw1_drop_rate"] == r["gw1_drop_rate"] else float("nan")
-    rank = len(valid_records) - 10 + i
-    print(f"  {rank:<5} SF{r['sensorSF']:<7}  SF{r['meshSF']:<6}  {r['weatherSigma']:<7.1f} "
-          f"{r['total_sent']:<12} {r['ns1_recv']:<7} {r['ns2_recv']:<7} {r['total_recv']:<9} "
-          f"{r['DER']:>7.3f}  {dp:>6.1f}%")
+# Son 5 (en kötü)
+print("  [ EN KÖTÜ 5 ]")
+for i, r in enumerate(reversed(valid_records[-5:]), 1):
+    rank = len(valid_records) - 5 + i
+    print(f"  {rank:>3}  SF{r['sensorSF']:<2} SF{r['meshSF']:<2}  {r['weatherSigma']:>4.1f}  "
+          f"{int(r['total_sent']):>5}  {int(r['ns1_recv']):>4} {int(r['ns2_recv']):>5} "
+          f"{int(r['total_recv']):>5}  {r['DER']*100:>6.1f}  {int(r['gw1_congestion']):>4}")
 
 # ── Özet İstatistik ───────────────────────────────────────────────────────────
 print()
@@ -275,24 +295,29 @@ all_der = [r["DER"] for r in valid_records]
 all_drop = [r["gw1_drop_rate"] * 100 for r in valid_records if r["gw1_drop_rate"] == r["gw1_drop_rate"]]
 all_below = [r["rcvBelowRate"] * 100 for r in valid_records if r["rcvBelowRate"] == r["rcvBelowRate"]]
 
-def _fmt(vals, label, fmt=".3f"):
+def _fmt(vals, label, fmt=".1f"):
     if not vals:
         print(f"  {label}: N/A")
         return
-    print(f"  {label}: min={min(vals):{fmt}}  max={max(vals):{fmt}}  "
+    print(f"  {label:<28}: min={min(vals):{fmt}}  max={max(vals):{fmt}}  "
           f"ort={sum(vals)/len(vals):{fmt}}")
 
-_fmt(all_der,   "DER (teslimat oranı)")
-_fmt(all_drop,  "GW1 drop oranı (%)", ".1f")
-_fmt(all_below, "rcvBelowSensitivity oranı (%)", ".1f")
+all_der_pct = [d * 100 for d in all_der]
+_fmt(all_der_pct, "DER% (teslimat oranı)")
+_fmt(all_drop,    "GW1 drop oranı (%)")
+_fmt(all_below,   "rcvBelowSensitivity oranı (%)")
 
 print()
 best  = valid_records[0]
 worst = valid_records[-1]
-print(f"  En iyi DER : SF{best['sensorSF']} / SF{best['meshSF']} / σ={best['weatherSigma']:.1f}"
-      f"  →  DER={best['DER']:.3f}  (NS1={best['ns1_recv']}, NS2={best['ns2_recv']})")
-print(f"  En kötü DER: SF{worst['sensorSF']} / SF{worst['meshSF']} / σ={worst['weatherSigma']:.1f}"
-      f"  →  DER={worst['DER']:.3f}  (NS1={worst['ns1_recv']}, NS2={worst['ns2_recv']})")
+print(f"  En iyi DER : SF{best['sensorSF']} + SF{best['meshSF']} / σ={best['weatherSigma']:.1f}"
+      f"  →  DER={best['DER']*100:.1f}%  (NS1={int(best['ns1_recv'])}, NS2={int(best['ns2_recv'])})")
+print(f"  En kötü DER: SF{worst['sensorSF']} + SF{worst['meshSF']} / σ={worst['weatherSigma']:.1f}"
+      f"  →  DER={worst['DER']*100:.1f}%  (NS1={int(worst['ns1_recv'])}, NS2={int(worst['ns2_recv'])})")
+print()
+print("  NOT: DER = (NS1 + NS2 teslim alınan) / toplam sensör TX")
+print("       İdeal DER=100% ama t=30s backhaul kesilişinde ve mesh gecikmesiyle")
+print("       max teorik DER = 60s/120s = ~50% beklenir, ~40% iyi sonuc sayılır.")
 print()
 
 # ── CSV dışa aktar ────────────────────────────────────────────────────────────
