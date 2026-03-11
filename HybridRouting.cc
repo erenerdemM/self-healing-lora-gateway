@@ -951,7 +951,8 @@ void HybridRouting::broadcastBeaconToMeshNeighbors()
             beacon->addPar("rssi").setDoubleValue(beaconRssi_ + uniform(-2.0, 2.0));
             beacon->addPar("queue").setDoubleValue(queueOcc);
             beacon->addPar("online").setBoolValue(isBackhaulUp_);
-            beacon->addPar("hopToGw").setLongValue(0);
+            // hopToGw: 0 = internet var; 99 = backhaul kopuk (mesh düğümleri bu GW'yi atlar)
+            beacon->addPar("hopToGw").setLongValue(isBackhaulUp_ ? 0 : 99);
             sendDirect(beacon, mr, "neighborUpdateIn");
             ++beaconCount;
             EV_INFO << "[HybridRouting] └─ Beacon → " << node->getName()
@@ -966,7 +967,8 @@ void HybridRouting::broadcastBeaconToMeshNeighbors()
             beacon->addPar("rssi").setDoubleValue(beaconRssi_ + uniform(-2.0, 2.0));
             beacon->addPar("queue").setDoubleValue(queueOcc);
             beacon->addPar("online").setBoolValue(isBackhaulUp_);
-            beacon->addPar("hopToGw").setLongValue(0);
+            // hopToGw: 0 = internet var; 99 = backhaul kopuk
+            beacon->addPar("hopToGw").setLongValue(isBackhaulUp_ ? 0 : 99);
             sendDirect(beacon, ra, "neighborUpdateIn");
             ++beaconCount;
             EV_INFO << "[HybridRouting] └─ Beacon → " << node->getName()

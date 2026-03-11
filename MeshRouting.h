@@ -180,6 +180,9 @@ class MeshRouting : public cSimpleModule
     // Yönlendirme bekleyen paketin hedef adresi (PROCESSING süresince tutulur)
     L3Address pendingDestination_;
 
+    // V2 iletim tamponu: ACTIVE_TX'e taşınan paket ve seçilen next-hop adresi
+    cMessage  *pendingPkt_  = nullptr;  // sahiplik enterActiveTx'e geçer
+
   // ─ Dahili zamanlayıcılar ────────────────────────────────────────────────
     cMessage *cadTimer_         = nullptr;  // Periyodik CAD uyanma zamanlayıcısı
     cMessage *cadEndTimer_      = nullptr;  // CAD tarama bitiş zamanlayıcısı

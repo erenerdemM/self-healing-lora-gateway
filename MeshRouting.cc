@@ -229,35 +229,29 @@ void MeshRouting::handleMessage(cMessage *msg)
 
         if (nextHop.isUnspecified()) {
             EV_WARN << "[MeshRouting] Next-hop bulunamadı — paket düşürüldü.\n";
-            // V2: packetDropSignal emit edilecek
-        }
-        else {
-            // ── Band P TX kotası kontrolü (kayan 1-saatlik pencere) ───────
-            // LongFast/SO B referans ToA: ~0.624s (PDF Kapasite Tablosu)
-            // Gerçek ToA'yı hesaplamak için SF/BW/PL runtime'da bilinmeli (V2).
-            // V1 referans: LongFast 50B → 0.624s
-            const double ref_toa_s = 0.624;
-            if (!checkDutyCycle(ref_toa_s)) {
-                EV_WARN << "[MeshRouting] TX SUSPEND aktif — paket ertelendi "
-                           "(Band P %10 DC kotası doldu).\n";
-                enterDeepSleep();
-                delete msg;
-                return;
-            }
-
-            EV_INFO << "[MeshRouting] Seçilen next-hop: " << nextHop
-                    << "  → ACTIVE_TX başlıyor.\n";
-
-            // V2: routeDecisionOut gate'ine nextHop adresi gönderilecek.
-            //   auto *reply = new RouteReplyMsg("routeReply");
-            //   reply->setNextHop(nextHop);
-            //   send(reply, "routeDecisionOut");
-
-            enterActiveTx();
+            delete msg;
+            return;
         }
 
-        delete msg;
-        return;
+        // ── Band P TX kotası kontrolü (kayan 1-saatlik pencere) ──────────
+        // LongFast/SO B referans ToA: ~0.624s (PDF Kapasite Tablosu)
+        const double ref_toa_s = 0.624;
+        if (!checkDutyCycle(ref_toa_s)) {
+            EV_WARN << "[MeshRouting] TX SUSPEND aktif — paket ertelendi "
+                       "(Band P %10 DC kotası doldu).\n";
+            enterDeepSleep();
+            delete msg;
+            return;
+        }
+
+        EV_INFO << "[MeshRouting] Seçilen next-hop: " << nextHop
+                << "  → ACTIVE_TX başlıyor.\n";
+
+        // Paketi ve hedef adresi ACTIVE_TX'e aktar (sahiplik devredildi)
+        pendingPkt_         = msg;
+        pendingDestination_ = nextHop;
+        enterActiveTx();
+        return;  // sahiplik sendDirect'e geçti — delete msg yapma
     }
 
     // ── neighborUpdateIn: MAC katmanından RSSI / komşu beacon bilgisi ────────
@@ -304,6 +298,12 @@ void MeshRouting::finish()
     cancelAndDelete(cadEndTimer_);    cadEndTimer_    = nullptr;
     cancelAndDelete(rxTimeoutTimer_); rxTimeoutTimer_ = nullptr;
     cancelAndDelete(beaconTimer_);    beaconTimer_    = nullptr;
+
+    // ACTIVE_TX'e aktarılmış ama gönderilmemiş bekleyen paket varsa temizle
+    if (pendingPkt_) {
+        delete pendingPkt_;
+        pendingPkt_ = nullptr;
+    }
 }
 
 // =============================================================================
@@ -622,8 +622,59 @@ void MeshRouting::enterActiveTx()
 
     EV_INFO << "[MeshRouting] → ACTIVE_TX  [120mA]\n";
 
-    // Simülasyonda TX senkron tamamlanır; gerçek donanımda TX_DONE kesmesi
-    // beklenir (SX1262 DIO1). V2'de bu asenkron yapılacak.
+    // V2: pendingPkt_ paketini pendingDestination_ adresine ilet.
+    // HybridRouting::forwardToMesh ile aynı sendDirect pattern'i:
+    //   - Hedef MeshNode  → meshRouting.routeRequestIn  (zincir röle)
+    //   - Hedef HybridGW  → routingAgent.routeRequestIn (son teslimat)
+    if (pendingPkt_) {
+        bool forwarded = false;
+        cModule *network = getSimulation()->getSystemModule();
+
+        for (cModule::SubmoduleIterator it(network); !it.end() && !forwarded; ++it) {
+            cModule *node = *it;
+            if (!node) continue;
+
+            // Hedef başka bir MeshNode mu?
+            cModule *mr = node->getSubmodule("meshRouting");
+            if (mr && mr != this && mr->findGate("routeRequestIn") >= 0) {
+                L3Address addr(mr->par("meshAddress").stringValue());
+                if (!addr.isUnspecified() && addr == pendingDestination_) {
+                    EV_INFO << "[MeshRouting] ACTIVE_TX sendDirect → "
+                            << node->getName()
+                            << ".meshRouting.routeRequestIn"
+                            << "  (next-hop=" << pendingDestination_ << ")\n";
+                    sendDirect(pendingPkt_, mr, "routeRequestIn");
+                    forwarded = true;
+                }
+            }
+
+            // Hedef HybridGateway mi?
+            if (!forwarded) {
+                cModule *ra = node->getSubmodule("routingAgent");
+                if (ra && ra->findGate("routeRequestIn") >= 0) {
+                    L3Address addr(ra->par("meshAddress").stringValue());
+                    if (!addr.isUnspecified() && addr == pendingDestination_) {
+                        EV_INFO << "[MeshRouting] ACTIVE_TX sendDirect → "
+                                << node->getName()
+                                << ".routingAgent.routeRequestIn"
+                                << "  [ONLINE-GW final teslimat]"
+                                << "  (next-hop=" << pendingDestination_ << ")\n";
+                        sendDirect(pendingPkt_, ra, "routeRequestIn");
+                        forwarded = true;
+                    }
+                }
+            }
+        }
+
+        if (!forwarded) {
+            EV_WARN << "[MeshRouting] ACTIVE_TX: next-hop bulunamadı ("
+                    << pendingDestination_ << ") — paket düşürüldü.\n";
+            delete pendingPkt_;
+        }
+        pendingPkt_ = nullptr;
+    }
+
+    // TX tamamlandı; DEEP_SLEEP'e dön
     enterDeepSleep();
 }
 
