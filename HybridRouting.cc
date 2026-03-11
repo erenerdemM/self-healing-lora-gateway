@@ -28,6 +28,7 @@
 #include "MeshPacket_m.h"
 
 #include "inet/common/packet/Packet.h"
+#include "LoRa/LoRaMacFrame_m.h"
 
 #include <algorithm>
 #include <limits>
@@ -319,9 +320,66 @@ void HybridRouting::handleMessage(cMessage *msg)
         return;
     }
 
+    // ── meshDeliveryIn: Mesh röle final teslimat (sendDirect kaynaklı) ────────
+    if (arrGate == findGate("meshDeliveryIn")) {
+        processMeshDelivery(msg);
+        return;
+    }
+
     EV_WARN << "[HybridRouting] Bilinmeyen gate mesajı (gateId="
             << arrGate << ") — silindi.\n";
     delete msg;
+}
+
+// =============================================================================
+// processMeshDelivery — Mesh'ten gelen SensorDataPacket'i NS2'ye ilet
+// -----------------------------------------------------------------------------
+// MeshRouting.cc, GW hedefli bir paketi enterActiveTx() içinde
+// routingAgent.meshDeliveryIn'e sendDirect() ile iletir.
+// Bu fonksiyon paketi alır, LoRaMacFrame ile sarar ve nsForwardOut kapısından
+// PacketForwarder'a gönderir; PacketForwarder da socket.sendTo ile NS2'ye iletir.
+// =============================================================================
+void HybridRouting::processMeshDelivery(cMessage *msg)
+{
+    auto *pkt = check_and_cast<inet::Packet*>(msg);
+    const auto &sdp = pkt->peekAtFront<SensorDataPacket>();
+
+    // SF sınır kontrolü: 7..12 dışındaysa NS2'de dizi taşması olur
+    int sf = sdp->getLoRaSF();
+    if (sf < 7 || sf > 12) sf = 9;
+
+    // Orijinal sensör MAC adresini string'ten geri dönüştür
+    inet::MacAddress txAddr;
+    const std::string macStr(sdp->getTransmitterMacStr());
+    if (!macStr.empty())
+        txAddr.setAddress(macStr.c_str());
+
+    // LoRaMacFrame oluştur — NS2 peekAtFront<LoRaMacFrame>() bunu bekler
+    auto frame = makeShared<flora::LoRaMacFrame>();
+    frame->setReceiverAddress(inet::MacAddress::BROADCAST_ADDRESS);
+    frame->setTransmitterAddress(txAddr);
+    frame->setLoRaSF(sf);
+    frame->setLoRaTP(14);             // varsayılan TX gücü (dBm)
+    frame->setLoRaCF(inet::Hz(868100000.0)); // 868.1 MHz — EU868 kanal 0
+    frame->setLoRaBW(inet::Hz(125000.0));    // 125 kHz
+    frame->setLoRaCR(1);              // 4/5 kod oranı
+    frame->setSequenceNumber(sdp->getSequenceNumber());
+    frame->setRSSI(sdp->getRssi());
+    frame->setSNIR(sdp->getSnir());
+    frame->setChunkLength(inet::B(13));
+    frame->markImmutable();
+    pkt->insertAtFront(frame);
+
+    EV_INFO << "[HybridRouting] meshDeliveryIn → nsForwardOut  SF=" << sf
+            << "  src=" << txAddr
+            << "  seq=" << sdp->getSequenceNumber() << "\n";
+
+    if (gate("nsForwardOut")->isConnected()) {
+        send(pkt, "nsForwardOut");
+    } else {
+        EV_WARN << "[HybridRouting] nsForwardOut bağlı değil — paket düşürüldü.\n";
+        delete pkt;
+    }
 }
 
 // =============================================================================
@@ -503,12 +561,35 @@ void HybridRouting::forwardToMesh(cMessage *originalMsg)
     // ── SensorDataPacket oluştur ve inet::Packet sarmala ─────────────────────
     // FieldsChunk türevleri (MeshPacket, SensorDataPacket) cMessage değil;
     // INET standardına göre inet::Packet sarmalayıcı içine konur.
+
+    // Orijinal LoRa paketinden SF / MAC / RSSI / SNR metadata'sını çıkar
+    int relayLoRaSF = 9;
+    std::string relayTxMac = "0a:aa:00:00:00:01";
+    double relayRssi = -100.0;
+    double relaySnir = 10.0;
+    auto *origPkt = dynamic_cast<inet::Packet*>(originalMsg);
+    if (origPkt) {
+        try {
+            const auto &macFrame = origPkt->peekAtFront<flora::LoRaMacFrame>();
+            if (macFrame) {
+                relayLoRaSF  = macFrame->getLoRaSF();
+                relayTxMac   = macFrame->getTransmitterAddress().str();
+                relayRssi    = macFrame->getRSSI();
+                relaySnir    = macFrame->getSNIR();
+            }
+        } catch (...) { /* orijinal paket LoRaMacFrame taşımıyorsa varsayılan kullan */ }
+    }
+
     auto chunk = makeShared<SensorDataPacket>();
     chunk->setSeqNum(static_cast<short>(seqCounter_));
     chunk->setDestinationGateway(bestGW);
     chunk->setHopCount(0);
     chunk->setSequenceNumber(seqCounter_++);
-    chunk->setChunkLength(inet::B(20));  // SensorDataPacket sabit boyutu
+    chunk->setLoRaSF(relayLoRaSF);
+    chunk->setTransmitterMacStr(relayTxMac.c_str());
+    chunk->setRssi(relayRssi);
+    chunk->setSnir(relaySnir);
+    chunk->setChunkLength(inet::B(32));  // SensorDataPacket genişletilmiş boyutu
     chunk->markImmutable();
 
     auto pkt = new inet::Packet("sensorData_mesh");

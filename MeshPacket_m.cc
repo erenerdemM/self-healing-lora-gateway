@@ -598,6 +598,10 @@ SensorDataPacket& SensorDataPacket::operator=(const SensorDataPacket& other)
 void SensorDataPacket::copy(const SensorDataPacket& other)
 {
     this->seqNum = other.seqNum;
+    this->loRaSF = other.loRaSF;
+    this->transmitterMacStr = other.transmitterMacStr;
+    this->rssi = other.rssi;
+    this->snir = other.snir;
     this->temperature_dC = other.temperature_dC;
     this->humidity = other.humidity;
     this->soilMoisture = other.soilMoisture;
@@ -610,6 +614,10 @@ void SensorDataPacket::parsimPack(omnetpp::cCommBuffer *b) const
 {
     ::lora_mesh::MeshPacket::parsimPack(b);
     doParsimPacking(b,this->seqNum);
+    doParsimPacking(b,this->loRaSF);
+    doParsimPacking(b,this->transmitterMacStr);
+    doParsimPacking(b,this->rssi);
+    doParsimPacking(b,this->snir);
     doParsimPacking(b,this->temperature_dC);
     doParsimPacking(b,this->humidity);
     doParsimPacking(b,this->soilMoisture);
@@ -622,6 +630,10 @@ void SensorDataPacket::parsimUnpack(omnetpp::cCommBuffer *b)
 {
     ::lora_mesh::MeshPacket::parsimUnpack(b);
     doParsimUnpacking(b,this->seqNum);
+    doParsimUnpacking(b,this->loRaSF);
+    doParsimUnpacking(b,this->transmitterMacStr);
+    doParsimUnpacking(b,this->rssi);
+    doParsimUnpacking(b,this->snir);
     doParsimUnpacking(b,this->temperature_dC);
     doParsimUnpacking(b,this->humidity);
     doParsimUnpacking(b,this->soilMoisture);
@@ -639,6 +651,50 @@ void SensorDataPacket::setSeqNum(short seqNum)
 {
     handleChange();
     this->seqNum = seqNum;
+}
+
+int SensorDataPacket::getLoRaSF() const
+{
+    return this->loRaSF;
+}
+
+void SensorDataPacket::setLoRaSF(int loRaSF)
+{
+    handleChange();
+    this->loRaSF = loRaSF;
+}
+
+const char * SensorDataPacket::getTransmitterMacStr() const
+{
+    return this->transmitterMacStr.c_str();
+}
+
+void SensorDataPacket::setTransmitterMacStr(const char * transmitterMacStr)
+{
+    handleChange();
+    this->transmitterMacStr = transmitterMacStr;
+}
+
+double SensorDataPacket::getRssi() const
+{
+    return this->rssi;
+}
+
+void SensorDataPacket::setRssi(double rssi)
+{
+    handleChange();
+    this->rssi = rssi;
+}
+
+double SensorDataPacket::getSnir() const
+{
+    return this->snir;
+}
+
+void SensorDataPacket::setSnir(double snir)
+{
+    handleChange();
+    this->snir = snir;
 }
 
 short SensorDataPacket::getTemperature_dC() const
@@ -713,6 +769,10 @@ class SensorDataPacketDescriptor : public omnetpp::cClassDescriptor
     mutable const char **propertyNames;
     enum FieldConstants {
         FIELD_seqNum,
+        FIELD_loRaSF,
+        FIELD_transmitterMacStr,
+        FIELD_rssi,
+        FIELD_snir,
         FIELD_temperature_dC,
         FIELD_humidity,
         FIELD_soilMoisture,
@@ -785,7 +845,7 @@ const char *SensorDataPacketDescriptor::getProperty(const char *propertyName) co
 int SensorDataPacketDescriptor::getFieldCount() const
 {
     omnetpp::cClassDescriptor *base = getBaseClassDescriptor();
-    return base ? 7+base->getFieldCount() : 7;
+    return base ? 11+base->getFieldCount() : 11;
 }
 
 unsigned int SensorDataPacketDescriptor::getFieldTypeFlags(int field) const
@@ -798,6 +858,10 @@ unsigned int SensorDataPacketDescriptor::getFieldTypeFlags(int field) const
     }
     static unsigned int fieldTypeFlags[] = {
         FD_ISEDITABLE,    // FIELD_seqNum
+        FD_ISEDITABLE,    // FIELD_loRaSF
+        FD_ISEDITABLE,    // FIELD_transmitterMacStr
+        FD_ISEDITABLE,    // FIELD_rssi
+        FD_ISEDITABLE,    // FIELD_snir
         FD_ISEDITABLE,    // FIELD_temperature_dC
         FD_ISEDITABLE,    // FIELD_humidity
         FD_ISEDITABLE,    // FIELD_soilMoisture
@@ -805,7 +869,7 @@ unsigned int SensorDataPacketDescriptor::getFieldTypeFlags(int field) const
         FD_ISEDITABLE,    // FIELD_pressure_hPa
         FD_ISEDITABLE,    // FIELD_lightLevel
     };
-    return (field >= 0 && field < 7) ? fieldTypeFlags[field] : 0;
+    return (field >= 0 && field < 11) ? fieldTypeFlags[field] : 0;
 }
 
 const char *SensorDataPacketDescriptor::getFieldName(int field) const
@@ -818,6 +882,10 @@ const char *SensorDataPacketDescriptor::getFieldName(int field) const
     }
     static const char *fieldNames[] = {
         "seqNum",
+        "loRaSF",
+        "transmitterMacStr",
+        "rssi",
+        "snir",
         "temperature_dC",
         "humidity",
         "soilMoisture",
@@ -825,7 +893,7 @@ const char *SensorDataPacketDescriptor::getFieldName(int field) const
         "pressure_hPa",
         "lightLevel",
     };
-    return (field >= 0 && field < 7) ? fieldNames[field] : nullptr;
+    return (field >= 0 && field < 11) ? fieldNames[field] : nullptr;
 }
 
 int SensorDataPacketDescriptor::findField(const char *fieldName) const
@@ -833,12 +901,16 @@ int SensorDataPacketDescriptor::findField(const char *fieldName) const
     omnetpp::cClassDescriptor *base = getBaseClassDescriptor();
     int baseIndex = base ? base->getFieldCount() : 0;
     if (strcmp(fieldName, "seqNum") == 0) return baseIndex + 0;
-    if (strcmp(fieldName, "temperature_dC") == 0) return baseIndex + 1;
-    if (strcmp(fieldName, "humidity") == 0) return baseIndex + 2;
-    if (strcmp(fieldName, "soilMoisture") == 0) return baseIndex + 3;
-    if (strcmp(fieldName, "rain") == 0) return baseIndex + 4;
-    if (strcmp(fieldName, "pressure_hPa") == 0) return baseIndex + 5;
-    if (strcmp(fieldName, "lightLevel") == 0) return baseIndex + 6;
+    if (strcmp(fieldName, "loRaSF") == 0) return baseIndex + 1;
+    if (strcmp(fieldName, "transmitterMacStr") == 0) return baseIndex + 2;
+    if (strcmp(fieldName, "rssi") == 0) return baseIndex + 3;
+    if (strcmp(fieldName, "snir") == 0) return baseIndex + 4;
+    if (strcmp(fieldName, "temperature_dC") == 0) return baseIndex + 5;
+    if (strcmp(fieldName, "humidity") == 0) return baseIndex + 6;
+    if (strcmp(fieldName, "soilMoisture") == 0) return baseIndex + 7;
+    if (strcmp(fieldName, "rain") == 0) return baseIndex + 8;
+    if (strcmp(fieldName, "pressure_hPa") == 0) return baseIndex + 9;
+    if (strcmp(fieldName, "lightLevel") == 0) return baseIndex + 10;
     return base ? base->findField(fieldName) : -1;
 }
 
@@ -852,6 +924,10 @@ const char *SensorDataPacketDescriptor::getFieldTypeString(int field) const
     }
     static const char *fieldTypeStrings[] = {
         "short",    // FIELD_seqNum
+        "int",    // FIELD_loRaSF
+        "string",    // FIELD_transmitterMacStr
+        "double",    // FIELD_rssi
+        "double",    // FIELD_snir
         "short",    // FIELD_temperature_dC
         "int",    // FIELD_humidity
         "int",    // FIELD_soilMoisture
@@ -859,7 +935,7 @@ const char *SensorDataPacketDescriptor::getFieldTypeString(int field) const
         "short",    // FIELD_pressure_hPa
         "int",    // FIELD_lightLevel
     };
-    return (field >= 0 && field < 7) ? fieldTypeStrings[field] : nullptr;
+    return (field >= 0 && field < 11) ? fieldTypeStrings[field] : nullptr;
 }
 
 const char **SensorDataPacketDescriptor::getFieldPropertyNames(int field) const
@@ -943,6 +1019,10 @@ std::string SensorDataPacketDescriptor::getFieldValueAsString(omnetpp::any_ptr o
     SensorDataPacket *pp = omnetpp::fromAnyPtr<SensorDataPacket>(object); (void)pp;
     switch (field) {
         case FIELD_seqNum: return long2string(pp->getSeqNum());
+        case FIELD_loRaSF: return long2string(pp->getLoRaSF());
+        case FIELD_transmitterMacStr: return oppstring2string(pp->getTransmitterMacStr());
+        case FIELD_rssi: return double2string(pp->getRssi());
+        case FIELD_snir: return double2string(pp->getSnir());
         case FIELD_temperature_dC: return long2string(pp->getTemperature_dC());
         case FIELD_humidity: return long2string(pp->getHumidity());
         case FIELD_soilMoisture: return long2string(pp->getSoilMoisture());
@@ -966,6 +1046,10 @@ void SensorDataPacketDescriptor::setFieldValueAsString(omnetpp::any_ptr object, 
     SensorDataPacket *pp = omnetpp::fromAnyPtr<SensorDataPacket>(object); (void)pp;
     switch (field) {
         case FIELD_seqNum: pp->setSeqNum(string2long(value)); break;
+        case FIELD_loRaSF: pp->setLoRaSF(string2long(value)); break;
+        case FIELD_transmitterMacStr: pp->setTransmitterMacStr((value)); break;
+        case FIELD_rssi: pp->setRssi(string2double(value)); break;
+        case FIELD_snir: pp->setSnir(string2double(value)); break;
         case FIELD_temperature_dC: pp->setTemperature_dC(string2long(value)); break;
         case FIELD_humidity: pp->setHumidity(string2long(value)); break;
         case FIELD_soilMoisture: pp->setSoilMoisture(string2long(value)); break;
@@ -987,6 +1071,10 @@ omnetpp::cValue SensorDataPacketDescriptor::getFieldValue(omnetpp::any_ptr objec
     SensorDataPacket *pp = omnetpp::fromAnyPtr<SensorDataPacket>(object); (void)pp;
     switch (field) {
         case FIELD_seqNum: return pp->getSeqNum();
+        case FIELD_loRaSF: return pp->getLoRaSF();
+        case FIELD_transmitterMacStr: return pp->getTransmitterMacStr();
+        case FIELD_rssi: return pp->getRssi();
+        case FIELD_snir: return pp->getSnir();
         case FIELD_temperature_dC: return pp->getTemperature_dC();
         case FIELD_humidity: return pp->getHumidity();
         case FIELD_soilMoisture: return pp->getSoilMoisture();
@@ -1010,6 +1098,10 @@ void SensorDataPacketDescriptor::setFieldValue(omnetpp::any_ptr object, int fiel
     SensorDataPacket *pp = omnetpp::fromAnyPtr<SensorDataPacket>(object); (void)pp;
     switch (field) {
         case FIELD_seqNum: pp->setSeqNum(omnetpp::checked_int_cast<short>(value.intValue())); break;
+        case FIELD_loRaSF: pp->setLoRaSF(omnetpp::checked_int_cast<int>(value.intValue())); break;
+        case FIELD_transmitterMacStr: pp->setTransmitterMacStr(value.stringValue()); break;
+        case FIELD_rssi: pp->setRssi(value.doubleValue()); break;
+        case FIELD_snir: pp->setSnir(value.doubleValue()); break;
         case FIELD_temperature_dC: pp->setTemperature_dC(omnetpp::checked_int_cast<short>(value.intValue())); break;
         case FIELD_humidity: pp->setHumidity(omnetpp::checked_int_cast<int>(value.intValue())); break;
         case FIELD_soilMoisture: pp->setSoilMoisture(omnetpp::checked_int_cast<int>(value.intValue())); break;

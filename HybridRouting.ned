@@ -124,10 +124,21 @@ simple HybridRouting
 
     gates:
         // Üst katmandan gelen yönlendirme kararı istekleri
-        input  routeRequestIn;
+        // @directIn: packetForwarder bağlıyken MeshNode sendDirect() de alabilir
+        input  routeRequestIn @directIn;
         // Seçilen next-hop bilgisi üst katmana
         output routeDecisionOut;
 
         // Komşu beacon / RSSI bildirimleri (MAC katmanından)
         input  neighborUpdateIn;
+
+        // Mesh Röle Final Teslimat (sendDirect hedefi — NED'de bağlanmaz)
+        // MeshRouting.cc, GW hedefli paketleri buraya sendDirect() ile iletir.
+        // routeRequestIn'den farklı olarak bu kapı HybridGateway.ned içinde
+        // hiçbir şeye bağlanmaz → OMNeT++ 6 sendDirect koşulu sağlanır.
+        input  meshDeliveryIn @allowUnconnected;
+
+        // NS Yönlendirme Çıkışı — HybridGateway.ned'de packetForwarder.meshRelayIn'e bağlanır.
+        // meshDeliveryIn'den gelen pakete LoRaMacFrame eklendikten sonra bu kapıdan gider.
+        output nsForwardOut @allowUnconnected;
 }

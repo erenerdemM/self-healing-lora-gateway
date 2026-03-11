@@ -625,7 +625,7 @@ void MeshRouting::enterActiveTx()
     // V2: pendingPkt_ paketini pendingDestination_ adresine ilet.
     // HybridRouting::forwardToMesh ile aynı sendDirect pattern'i:
     //   - Hedef MeshNode  → meshRouting.routeRequestIn  (zincir röle)
-    //   - Hedef HybridGW  → routingAgent.routeRequestIn (son teslimat)
+    //   - Hedef HybridGW  → routingAgent.meshDeliveryIn (son teslimat)
     if (pendingPkt_) {
         bool forwarded = false;
         cModule *network = getSimulation()->getSystemModule();
@@ -649,17 +649,19 @@ void MeshRouting::enterActiveTx()
             }
 
             // Hedef HybridGateway mi?
+            // routeRequestIn BAĞLI olduğundan sendDirect hedefi OLAMAZ.
+            // HybridRouting.meshDeliveryIn ise bağlı değil → sendDirect güvenli.
             if (!forwarded) {
                 cModule *ra = node->getSubmodule("routingAgent");
-                if (ra && ra->findGate("routeRequestIn") >= 0) {
+                if (ra && ra->findGate("meshDeliveryIn") >= 0) {
                     L3Address addr(ra->par("meshAddress").stringValue());
                     if (!addr.isUnspecified() && addr == pendingDestination_) {
                         EV_INFO << "[MeshRouting] ACTIVE_TX sendDirect → "
                                 << node->getName()
-                                << ".routingAgent.routeRequestIn"
+                                << ".routingAgent.meshDeliveryIn"
                                 << "  [ONLINE-GW final teslimat]"
                                 << "  (next-hop=" << pendingDestination_ << ")\n";
-                        sendDirect(pendingPkt_, ra, "routeRequestIn");
+                        sendDirect(pendingPkt_, ra, "meshDeliveryIn");
                         forwarded = true;
                     }
                 }

@@ -134,6 +134,19 @@ inline void doParsimUnpacking(omnetpp::cCommBuffer *b, MeshPacket& obj) {obj.par
  *     // Sıra numarası (SensorLoRaApp.cc'deki seqNum ile aynı)
  *     short seqNum = 0;
  * 
+ *     // ── Mesh Röle Teslimat Metadata (PacketForwarder.meshRelayIn için) ──────
+ *     // LoRa Spreading Factor (7..12). forwardToMesh() orijinal LoRaMacFrame'den
+ *     // kopyalar; PacketForwarder NS2'ye teslim ederken LoRaMacFrame içine yazar.
+ *     int loRaSF = 9;
+ * 
+ *     // Orijinal sensör MAC adresi (string olarak; MacAddress.str() çıktısı).
+ *     // Ör: "0a:aa:00:00:00:01". PacketForwarder bunu MacAddress(str)'a dönüştürür.
+ *     string transmitterMacStr = "0a:aa:00:00:00:01";
+ * 
+ *     // Sinyal kalitesi (orijinal GW-Sensor ölçümü, NS2 istatistikleri için)
+ *     double rssi = -100.0;
+ *     double snir = 10.0;
+ * 
  *     // Sıcaklık — ondalık hassasiyeti korumak için ×10 tamsayı olarak
  *     // Örnek: 23.5 °C → 235, -5.0 °C → -50
  *     short temperature_dC = 0;
@@ -160,6 +173,10 @@ class SensorDataPacket : public ::lora_mesh::MeshPacket
 {
   protected:
     short seqNum = 0;
+    int loRaSF = 9;
+    ::omnetpp::opp_string transmitterMacStr = "0a:aa:00:00:00:01";
+    double rssi = -100.0;
+    double snir = 10.0;
     short temperature_dC = 0;
     int humidity = 0;
     int soilMoisture = 0;
@@ -185,6 +202,18 @@ class SensorDataPacket : public ::lora_mesh::MeshPacket
     virtual short getSeqNum() const;
     virtual void setSeqNum(short seqNum);
 
+    virtual int getLoRaSF() const;
+    virtual void setLoRaSF(int loRaSF);
+
+    virtual const char * getTransmitterMacStr() const;
+    virtual void setTransmitterMacStr(const char * transmitterMacStr);
+
+    virtual double getRssi() const;
+    virtual void setRssi(double rssi);
+
+    virtual double getSnir() const;
+    virtual void setSnir(double snir);
+
     virtual short getTemperature_dC() const;
     virtual void setTemperature_dC(short temperature_dC);
 
@@ -208,7 +237,7 @@ inline void doParsimPacking(omnetpp::cCommBuffer *b, const SensorDataPacket& obj
 inline void doParsimUnpacking(omnetpp::cCommBuffer *b, SensorDataPacket& obj) {obj.parsimUnpack(b);}
 
 /**
- * Class generated from <tt>MeshPacket.msg:116</tt> by opp_msgtool.
+ * Class generated from <tt>MeshPacket.msg:129</tt> by opp_msgtool.
  * <pre>
  * // =============================================================================
  * // 3. SosBeaconPacket — Acil durum imdat sinyali (AjanGateway uyanışı)

@@ -133,4 +133,10 @@ module HybridGateway extends LoRaGW
         // sensör paketlerini doğrudan bu bağlantı üzerinden HybridRouting'e iletir.
         // HybridRouting → SENARYO B → forwardToMesh() → sendDirect → hedef MeshNode
         packetForwarder.hybridOut --> routingAgent.routeRequestIn;
+
+        // Mesh Röle Geri Dönüş: hedef GW'de HybridRouting, mesh'ten gelen paketi
+        // LoRaMacFrame ile sarar ve PacketForwarder aracılığıyla NS2'ye iletir.
+        // routingAgent.meshDeliveryIn ← sendDirect (MeshRouting.cc, bağlı değil)
+        // routingAgent.nsForwardOut → packetForwarder.meshRelayIn (bu bağlantı)
+        routingAgent.nsForwardOut --> packetForwarder.meshRelayIn;
 }

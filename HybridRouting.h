@@ -215,6 +215,7 @@ class HybridRouting : public cSimpleModule
      * Backhaul durumuna göre SENARYO A (doğrudan) veya SENARYO B (mesh) karar verilir.
      */
     void processRouteRequest(cMessage *msg);
+    void processMeshDelivery(cMessage *msg);   // meshDeliveryIn → LoRaMacFrame wrap → nsForwardOut
 
     /** Online Gateway sayısını döndür (tablo taze girişler için) */
     int  countOnlineGateways() const;

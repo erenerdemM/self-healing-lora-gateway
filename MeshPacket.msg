@@ -76,6 +76,19 @@ class SensorDataPacket extends MeshPacket
     // Sıra numarası (SensorLoRaApp.cc'deki seqNum ile aynı)
     short seqNum = 0;
 
+    // ── Mesh Röle Teslimat Metadata (PacketForwarder.meshRelayIn için) ──────
+    // LoRa Spreading Factor (7..12). forwardToMesh() orijinal LoRaMacFrame'den
+    // kopyalar; PacketForwarder NS2'ye teslim ederken LoRaMacFrame içine yazar.
+    int loRaSF = 9;
+
+    // Orijinal sensör MAC adresi (string olarak; MacAddress.str() çıktısı).
+    // Ör: "0a:aa:00:00:00:01". PacketForwarder bunu MacAddress(str)'a dönüştürür.
+    string transmitterMacStr = "0a:aa:00:00:00:01";
+
+    // Sinyal kalitesi (orijinal GW-Sensor ölçümü, NS2 istatistikleri için)
+    double rssi = -100.0;
+    double snir = 10.0;
+
     // Sıcaklık — ondalık hassasiyeti korumak için ×10 tamsayı olarak
     // Örnek: 23.5 °C → 235, -5.0 °C → -50
     short temperature_dC = 0;
