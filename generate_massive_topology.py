@@ -270,7 +270,7 @@ def generate_ini_block(num_gw: int, mper: int, mode: str, pos: dict) -> str:
     cd_str      = ", ".join(CAD_DUR)
 
     # Komşu önbellek menzili: topoloji uzunluğu + 10km tampon (min 35km)
-    nb_range = max(35_000, total_len + 10_000)
+    nb_range = max(5_000, total_len + 3_000)  # commRange ~3500m → cache range 5-8 km yeterli
 
     # Kısıt alanı
     max_x = total_len + 2_000
@@ -315,8 +315,9 @@ def generate_ini_block(num_gw: int, mper: int, mode: str, pos: dict) -> str:
         f"**.radioMedium.pathLoss.d0          = 1m",
         f"**.radioMedium.pathLoss.gamma       = 2.75",
         f"**.radioMedium.pathLoss.pl_d0_db    = 31.54",
-        f"**.radioMedium.pathLoss.max_sensitivity_dBm = -141.0",
+        f"**.radioMedium.pathLoss.max_sensitivity_dBm = -115.0",  # -141→-115: commRange 30km→3.5km (spatial reuse)
         f"**.radioMedium.mediumLimitCache.maxTransmissionDuration = 5s",
+        f"**.radioMedium.mediumLimitCache.maxTransmissionPower = 0.025118W",  # fix NaN → enables commRange rangeFilter
         f'**.radioMedium.pathLossType         = "LoRaLogNormalShadowing"',
         f"**.minInterferenceTime              = 0s",
         f'**.radioMedium.mediumLimitCacheType = "LoRaMediumCache"',
@@ -346,7 +347,7 @@ def generate_ini_block(num_gw: int, mper: int, mode: str, pos: dict) -> str:
         f"**.routingAgent.neighborTimeout            = 120s",
         f"**.routingAgent.bandMTxPower_dBm           = 14.0",
         f"**.routingAgent.bandMDutyCycle             = 0.01",
-        f"**.routingAgent.rx2TxPower_dBm             = 27.0",
+        f"**.routingAgent.rx2TxPower_dBm             = 14.0",  # 27→14 dBm: standart LoRa txPower
         f"**.routingAgent.rx2DutyCycle               = 0.10",
         f"**.routingAgent.rx2Frequency               = 869.525MHz",
         f"**.routingAgent.antennaGain_dBi            = 0.0",
@@ -393,13 +394,13 @@ def generate_ini_block(num_gw: int, mper: int, mode: str, pos: dict) -> str:
         f"**.sensorGW*[*].app[0].initialLoRaCR         = 4",
         f"**.sensorGW*[*].app[0].initialUseHeader      = true",
         f"",
-        f"# ── Staggered start: çarpışmaları önlemek için 1.5s aralık ─────────────────",
+        f"# ── Staggered start: SF12 ToA=1.97s → 3.5s aralık (tüm SF için güvenli) ──",
     ]
 
     for i in range(num_gw):
         for k in range(SENSORS_PER_GW):
-            t = 2.0 + (i * SENSORS_PER_GW + k) * 1.5
-            L.append(f"**.sensorGW{i}[{k}].app[0].timeToFirstPacket = {t:.1f}s")
+            t = 2.0 + (i * SENSORS_PER_GW + k) * 3.5
+            L.append(f"**.sensorGW{i}[{k}].app[0].startTime = {t:.1f}s")
 
     L += [
         f"",
