@@ -46,8 +46,8 @@ OMNETPP_DIR = "/home/eren/Desktop/bitirme_lora_kod/omnetpp-6.0-linux-x86_64/omne
 FLORA_DIR   = "/home/eren/Desktop/bitirme_lora_kod/workspace/flora"
 INET_DIR    = "/home/eren/Desktop/bitirme_lora_kod/workspace/inet4.4"
 
-NUM_GW_RANGE       = range(2, 11)   # 2 .. 10
-MESH_PER_GAP_RANGE = range(1, 11)   # 1 .. 10
+NUM_GW_RANGE       = range(2, 8)    # 2 .. 7  (7x7 sınırı: 6 GW değeri)
+MESH_PER_GAP_RANGE = range(1, 8)    # 1 .. 7  (7x7 sınırı: 7 Mesh değeri)
 MODES              = ["MIN", "MAX"]
 SENSORS_PER_GW     = 10
 
