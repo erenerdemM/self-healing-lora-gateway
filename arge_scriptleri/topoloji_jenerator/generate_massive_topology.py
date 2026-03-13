@@ -38,7 +38,7 @@ from typing import Tuple
 # ─────────────────────────────────────────────────────────────────────────────
 # Sabitler
 # ─────────────────────────────────────────────────────────────────────────────
-PROJ_DIR    = Path(__file__).resolve().parent
+PROJ_DIR    = Path(__file__).resolve().parent.parent.parent  # arge_scriptleri/topoloji_jenerator/ → lora_mesh_projesi/
 INI_FILE    = PROJ_DIR / "omnetpp.ini"
 RUN_SCRIPT  = PROJ_DIR / "run_massive.sh"
 

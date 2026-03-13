@@ -176,6 +176,13 @@ void HybridRouting::initialize(int stage)
     }
 }
 
+// ==========================================
+// 🧠 GW KARAR VE YÖNLENDİRME MEKANİZMASI
+//    handleMessage, processMeshDelivery,
+//    forwardToMesh, selectBestNeighborGateway,
+//    broadcastSosBeacon — paket akışı kararları
+// ==========================================
+
 // =============================================================================
 // handleMessage — tüm zamanlayıcı ve dış mesaj akışının merkezi
 // =============================================================================
@@ -906,6 +913,14 @@ bool HybridRouting::areAllNeighborsCongested() const
     }
     return true;   // Hep si congestionThreshold üzerinde
 }
+
+// ==========================================
+// 📡 GW LORAWAN ALICI VE FİZİKSEL MEKANİZMA
+//    enterDeepSleep, enterCAD, enterActiveRx,
+//    enterActiveTx, enterProcessing,
+//    onPreambleDetected, broadcastBeacon,
+//    checkBandMDutyCycle, effectiveTxPower
+// ==========================================
 
 // =============================================================================
 // Güç Durum Makinesi (HybridGateway için basitleştirilmiş CAD döngüsü)

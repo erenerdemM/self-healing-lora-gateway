@@ -424,6 +424,13 @@ L3Address MeshRouting::selectNextHop(double txPower_dBm)
     return sorted[0].first;
 }
 
+// ==========================================
+// 🔗 MESH BAĞLANTI VE KEŞİF (BEACON) MEKANİZMASI
+//    updateNeighbor, purgeStaleNeighbors,
+//    broadcastBeaconToMeshNeighbors — komşu
+//    tablosu ve WoR beacon yönetimi
+// ==========================================
+
 // -----------------------------------------------------------------------------
 // updateNeighbor — komşu tablosuna ekle veya güncelle
 // -----------------------------------------------------------------------------
@@ -789,6 +796,13 @@ void MeshRouting::broadcastBeaconToMeshNeighbors()
 
     EV_INFO << "[MeshRouting] Beacon gönderildi: " << count << " alıcı\n";
 }
+
+// ==========================================
+// 🚀 HOP-BY-HOP VERİ YÖNLENDİRME (ROUTING)
+//    computeHopToGw — C_i maliyet fonksiyonu
+//    ile en kısa yol hesaplama (hop sayısı,
+//    RSSI, kuyruk doluluk, online-GW kontrolü)
+// ==========================================
 
 // -----------------------------------------------------------------------------
 // computeHopToGw — En yakın ONLINE-GW'ye kaç hop?
