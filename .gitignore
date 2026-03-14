@@ -34,6 +34,11 @@ results/
 *.log
 *.elog
 
+# Ham veri arşivleri — büyük binary, Git LFS olmadan push edilmemeli
+*.tar
+*.tar.gz
+*.tar.bz2
+
 # Cmdenv log
 .cmdenv-log
 
@@ -89,6 +94,20 @@ env/
 *~
 \#*\#
 .#*
+
+# Otomatik üretilen topoloji NED dosyaları (generate_massive_topology.py çıktısı)
+LoraMesh_GW*_Mesh*_*.ned
+
+# Simülasyon log dizinleri
+logs_massive/
+logs_massive_faz2/
+logs_massive_faz2_v2/
+logs_massive_faz3/
+logs_faz123/
+logs_full144/
+
+# mega_organize_run.log geçici çıktı
+mega_organize_run.log
 
 # -----------------------------------------------------------------------------
 # OS dosyaları

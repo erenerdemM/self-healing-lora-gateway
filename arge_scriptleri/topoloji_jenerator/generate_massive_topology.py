@@ -85,6 +85,25 @@ PHASE_CONFIGS = {
         "log_base": "logs_massive_faz2_v2",
         "result_dir": "results_faz2_v2",
         "desc_suffix": "sigma=4.5, gamma=2.8, obstacle_loss=3.5dB (foliage/wood, Arazi1 dogal)",
+        "noise_floor_dBm": None,         # varsayılan (INET default)
+        "energy_detection_dBm": None,    # varsayılan
+    },
+    3: {
+        # Arazi 1 — Doğal engel + Gürültü Baskısı (ISM-band interference @ 868 MHz)
+        # Faz 2.1 üzerine gürültü bindirildi:
+        #   sigma   +0.5 → 5.0 dB  (gürültü kaynaklı ek dalgalanma)
+        #   noiseFloor -105 dBm   (-110 → -105, +5 dB gürültü tabanı yükseltisi)
+        #   energyDetection -95 dBm (ISM komşu-kanal interferansı)
+        "sigma": 5.0,
+        "gamma": 2.8,
+        "obstacle_loss_db": 3.5,
+        "config_prefix": "Faz3_",
+        "run_script": "run_faz3.sh",
+        "log_base": "logs_massive_faz3",
+        "result_dir": "results_faz3",
+        "desc_suffix": "sigma=5.0, gamma=2.8, obstacle=3.5dB, noiseFloor=-105dBm, energyDet=-95dBm (Gurultu)",
+        "noise_floor_dBm": -105.0,
+        "energy_detection_dBm": -95.0,
     },
 }
 
@@ -362,6 +381,10 @@ def generate_ini_block(num_gw: int, mper: int, mode: str, pos: dict) -> str:
         f"**.radioMedium.pathLoss.max_sensitivity_dBm = -115.0",  # -141→-115: commRange 30km→3.5km (spatial reuse)
         f"**.radioMedium.mediumLimitCache.maxTransmissionDuration = 5s",
         f"**.radioMedium.mediumLimitCache.maxTransmissionPower = 0.025118W",  # fix NaN → enables commRange rangeFilter
+        *([f"**.radio.receiver.noiseFloor = {PHASE_CONFIGS[ACTIVE_PHASE]['noise_floor_dBm']}dBm"]
+          if PHASE_CONFIGS[ACTIVE_PHASE].get('noise_floor_dBm') is not None else []),
+        *([f"**.radio.receiver.energyDetection = {PHASE_CONFIGS[ACTIVE_PHASE]['energy_detection_dBm']}dBm"]
+          if PHASE_CONFIGS[ACTIVE_PHASE].get('energy_detection_dBm') is not None else []),
         f'**.radioMedium.pathLossType         = "LoRaLogNormalShadowing"',
         f"**.minInterferenceTime              = 0s",
         f'**.radioMedium.mediumLimitCacheType = "LoRaMediumCache"',
