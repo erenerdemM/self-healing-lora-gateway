@@ -40,11 +40,53 @@ from typing import Tuple
 # ─────────────────────────────────────────────────────────────────────────────
 PROJ_DIR    = Path(__file__).resolve().parent.parent.parent  # arge_scriptleri/topoloji_jenerator/ → lora_mesh_projesi/
 INI_FILE    = PROJ_DIR / "omnetpp.ini"
-RUN_SCRIPT  = PROJ_DIR / "run_massive.sh"
+RUN_SCRIPT  = PROJ_DIR / "run_massive.sh"  # main() içinde --phase'e göre güncellenir
 
 OMNETPP_DIR = "/home/eren/Desktop/bitirme_lora_kod/omnetpp-6.0-linux-x86_64/omnetpp-6.0"
 FLORA_DIR   = "/home/eren/Desktop/bitirme_lora_kod/workspace/flora"
 INET_DIR    = "/home/eren/Desktop/bitirme_lora_kod/workspace/inet4.4"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Faz yapılandırmaları (--phase N ile seçilir)
+# ─────────────────────────────────────────────────────────────────────────────
+ACTIVE_PHASE = 1   # main() içinde --phase argümanıyla değiştirilir
+
+PHASE_CONFIGS = {
+    1: {
+        # Arazi 1 — açık alan, engelsiz (Faz 1 temel ölçeklendirme)
+        "sigma": 0.0,
+        "gamma": 2.75,
+        "obstacle_loss_db": 0.0,
+        "config_prefix": "Scalable_",
+        "run_script": "run_massive.sh",
+        "log_base": "logs_massive",
+        "result_dir": "results",
+        "desc_suffix": "sigma=0, backhaulCutTime=-1s",
+    },
+    2: {
+        # Arazi 2 — kentsel, yoğun gölgelenme + yüksek gamma (Faz 2 stres)
+        "sigma": 6.0,
+        "gamma": 3.5,
+        "obstacle_loss_db": 0.0,
+        "config_prefix": "Faz2_",
+        "run_script": "run_faz2.sh",
+        "log_base": "logs_massive_faz2",
+        "result_dir": "results_faz2",
+        "desc_suffix": "sigma=6.0, gamma=3.5 (shadowing+kentsel), Faz2",
+    },
+    21: {
+        # Arazi 1 — Doğal engeller (foliage/wood) — ITU-R P.833 / P.2040 §4
+        # pl_d0_db = 31.54 + 3.5 = 35.04 dB  (ağaç/çalılık kaybı @ 868 MHz)
+        "sigma": 4.5,
+        "gamma": 2.8,
+        "obstacle_loss_db": 3.5,
+        "config_prefix": "Faz21_",
+        "run_script": "run_faz21.sh",
+        "log_base": "logs_massive_faz2_v2",
+        "result_dir": "results_faz2_v2",
+        "desc_suffix": "sigma=4.5, gamma=2.8, obstacle_loss=3.5dB (foliage/wood, Arazi1 dogal)",
+    },
+}
 
 NUM_GW_RANGE       = range(2, 8)    # 2 .. 7  (7x7 sınırı: 6 GW değeri)
 MESH_PER_GAP_RANGE = range(1, 8)    # 1 .. 7  (7x7 sınırı: 7 Mesh değeri)
@@ -70,7 +112,7 @@ def net_name(num_gw: int, mper: int, mode: str) -> str:
     return f"LoraMesh_GW{num_gw}_Mesh{mper}_{mode}"
 
 def config_name(num_gw: int, mper: int, mode: str) -> str:
-    return f"Scalable_GW{num_gw}_Mesh{mper}_{mode}"
+    return f"{PHASE_CONFIGS[ACTIVE_PHASE]['config_prefix']}GW{num_gw}_Mesh{mper}_{mode}"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Pozisyon hesaplama
@@ -284,14 +326,16 @@ def generate_ini_block(num_gw: int, mper: int, mode: str, pos: dict) -> str:
         f"# GW={num_gw}  MeshPerGap={mper}  Mod={mode}",
         f"# Hop={hop}m  Gap={gap}m  ToplamUzunluk={total_len}m",
         f"# MeshNode={total_mesh}  Sensör={total_sens} ({SENSORS_PER_GW}/GW)",
-        f"# Run=36  (sensorSF 7..12 × meshSF 7..12), sigma=0.0",
+        f"# Run=36  (sensorSF 7..12 × meshSF 7..12), sigma={PHASE_CONFIGS[ACTIVE_PHASE]['sigma']}",
         f"# {'='*77}",
         f"",
         f"[Config {cn}]",
         f"network        = {nn}",
         f"sim-time-limit = 1200s",
-        f'description    = "Scalable GW={num_gw} Mesh={mper} {mode}: '
-        f'{total_sens} sensör, {total_mesh} MeshNode, sigma=0, backhaulCutTime=-1s"',
+        f'description    = "{PHASE_CONFIGS[ACTIVE_PHASE]["config_prefix"]}GW={num_gw} Mesh={mper} {mode}: '
+        f'{total_sens} sensör, {total_mesh} MeshNode, {PHASE_CONFIGS[ACTIVE_PHASE]["desc_suffix"]}"',
+        f"",
+        f"output-scalar-file = {PHASE_CONFIGS[ACTIVE_PHASE]['result_dir']}/{cn}-${{runnumber}}.sca",
         f"",
         f"**.scalar-recording = true",
         f"**.vector-recording = false",
@@ -299,8 +343,8 @@ def generate_ini_block(num_gw: int, mper: int, mode: str, pos: dict) -> str:
         f"# ── Kartezyen çarpım: sensorSF × meshSF = 36 run ──────────────────────────",
         f"**.sensorGW*[*].app[0].initialLoRaSF       = ${{sensorSF    = 7, 8, 9, 10, 11, 12}}",
         f"**.meshNode[*].meshRouting.loraSF           = ${{meshSF      = 7, 8, 9, 10, 11, 12}}",
-        f"**.radioMedium.pathLoss.sigma               = 0.0",
-        f"**.sigma                                    = 0.0",
+        f"**.radioMedium.pathLoss.sigma               = {PHASE_CONFIGS[ACTIVE_PHASE]['sigma']}",
+        f"**.sigma                                    = {PHASE_CONFIGS[ACTIVE_PHASE]['sigma']}",
         f"",
         f"# ── sensorSF paralel (!): sendInterval + gwSensitivity ────────────────────",
         f"**.sensorGW*[*].app[0].dataSize      = 20B",
@@ -313,8 +357,8 @@ def generate_ini_block(num_gw: int, mper: int, mode: str, pos: dict) -> str:
         f"",
         f"# ── LoRaWAN Fiziksel Ortam ─────────────────────────────────────────────────",
         f"**.radioMedium.pathLoss.d0          = 1m",
-        f"**.radioMedium.pathLoss.gamma       = 2.75",
-        f"**.radioMedium.pathLoss.pl_d0_db    = 31.54",
+        f"**.radioMedium.pathLoss.gamma       = {PHASE_CONFIGS[ACTIVE_PHASE]['gamma']}",
+        f"**.radioMedium.pathLoss.pl_d0_db    = {31.54 + PHASE_CONFIGS[ACTIVE_PHASE]['obstacle_loss_db']:.2f}",
         f"**.radioMedium.pathLoss.max_sensitivity_dBm = -115.0",  # -141→-115: commRange 30km→3.5km (spatial reuse)
         f"**.radioMedium.mediumLimitCache.maxTransmissionDuration = 5s",
         f"**.radioMedium.mediumLimitCache.maxTransmissionPower = 0.025118W",  # fix NaN → enables commRange rangeFilter
@@ -492,21 +536,27 @@ def generate_run_script(all_configs: list) -> str:
     total = len(all_configs) * 36  # 36 run/config
     cfg_lines = "\n".join(f'    "{c}"' for c in all_configs)
 
+    phase_conf = PHASE_CONFIGS[ACTIVE_PHASE]
+    log_base   = phase_conf['log_base']
+    result_dir = phase_conf['result_dir']
+    run_script_name = RUN_SCRIPT.name
+
     return f"""#!/bin/bash
 # =============================================================================
-# run_massive.sh — Auto-generated by generate_massive_topology.py
+# {run_script_name} — Auto-generated by generate_massive_topology.py  [phase={ACTIVE_PHASE}]
 # =============================================================================
 # Toplam config : {len(all_configs)}
 # Run/config    : 36  (sensorSF 7..12 × meshSF 7..12)
 # Toplam run    : {total}
+# Phase         : {ACTIVE_PHASE}  ({phase_conf['desc_suffix']})
 #
 # Kullanım:
-#   bash run_massive.sh [--jobs N] [--from-config IDX] [--to-config IDX]
-#   bash run_massive.sh --config Scalable_GW2_Mesh1_MIN        # tek config
-#   bash run_massive.sh --jobs 4 --from-config 0 --to-config 9  # ilk 10 config
+#   bash {run_script_name} [--jobs N] [--from-config IDX] [--to-config IDX]
+#   bash {run_script_name} --config {phase_conf['config_prefix']}GW2_Mesh1_MIN  # tek config
+#   bash {run_script_name} --jobs 4 --from-config 0 --to-config 9  # ilk 10 config
 #
 # Resume: .done flag'leri sayesinde kaldığı yerden devam eder.
-#   Silmek için: rm -rf logs_massive/<ConfigName>
+#   Silmek için: rm -rf {log_base}/<ConfigName>
 # =============================================================================
 
 set -euo pipefail
@@ -517,7 +567,7 @@ OMNETPP_DIR="{OMNETPP_DIR}"
 FLORA="{FLORA_DIR}"
 INET="{INET_DIR}"
 RUNS_PER_CONFIG=36
-LOG_BASE="${{PROJ_DIR}}/logs_massive"
+LOG_BASE="${{PROJ_DIR}}/{log_base}"
 
 export LD_LIBRARY_PATH="${{OMNETPP_DIR}}/lib:${{FLORA}}/src:${{INET}}/src${{LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}}"
 
@@ -610,12 +660,21 @@ for cfg_idx in $(seq "${{FROM_CFG}}" "${{TO_CFG}}"); do
     if [[ ${{JOBS}} -gt 1 ]] && command -v parallel &>/dev/null; then
         seq 0 $(( RUNS_PER_CONFIG - 1 )) | \\
             parallel -j "${{JOBS}}" --line-buffer run_one "${{config}}" {{}}
-    else
-        if [[ ${{JOBS}} -gt 1 && ${{cfg_idx}} -eq ${{FROM_CFG}} ]]; then
-            echo "  UYARI: GNU Parallel bulunamadı, sıralı mod."
-        fi
+    elif [[ ${{JOBS}} -gt 1 ]]; then
+        # GNU Parallel yoksa: bash background jobs ile paralel (& + wait -n)
+        _RUNNING=0
         for run in $(seq 0 $(( RUNS_PER_CONFIG - 1 ))); do
-            run_one "${{config}}" "${{run}}" || (( TOTAL_FAILED++ ))
+            run_one "${{config}}" "${{run}}" &
+            _RUNNING=$(( _RUNNING + 1 ))
+            if (( _RUNNING >= JOBS )); then
+                wait -n 2>/dev/null || wait
+                _RUNNING=$(( _RUNNING - 1 ))
+            fi
+        done
+        wait
+    else
+        for run in $(seq 0 $(( RUNS_PER_CONFIG - 1 ))); do
+            run_one "${{config}}" "${{run}}" || (( TOTAL_FAILED++ )) || true
         done
     fi
 
@@ -631,7 +690,7 @@ echo ""
 echo "=== Batch tamamlandı ==="
 echo "Geçen süre   : $(( ELAPSED / 3600 ))s $(( (ELAPSED % 3600) / 60 ))dk $(( ELAPSED % 60 ))sn"
 echo "Başarısız    : ${{TOTAL_FAILED}}"
-echo "SCA dosyaları: ${{PROJ_DIR}}/results/Scalable_*.sca"
+echo "SCA dosyaları: ${{PROJ_DIR}}/{result_dir}/{phase_conf['config_prefix']}*.sca"
 """
 
 
@@ -696,9 +755,14 @@ def process_one(num_gw: int, mper: int, mode: str, dry_run: bool = False) -> str
 # Ana giriş noktası
 # ─────────────────────────────────────────────────────────────────────────────
 def main() -> None:
+    global ACTIVE_PHASE, RUN_SCRIPT
+
     parser = argparse.ArgumentParser(
-        description="Devasa topoloji fabrikası: NED + INI + run_massive.sh üretir"
+        description="Devasa topoloji fabrikası: NED + INI + run_faz*.sh üretir"
     )
+    parser.add_argument("--phase", type=int, default=1,
+                        choices=list(PHASE_CONFIGS.keys()),
+                        help=f"Faz numarası ({list(PHASE_CONFIGS.keys())}), varsayılan: 1")
     parser.add_argument("--test",    action="store_true",
                         help="Sadece GW=2, Mesh=1 (her iki mod) üret ve çık")
     parser.add_argument("--dry-run", action="store_true",
@@ -712,14 +776,19 @@ def main() -> None:
                         help="Mesafe modu veya ALL (varsayılan: ALL)")
     args = parser.parse_args()
 
+    # Aktif fazı ayarla
+    ACTIVE_PHASE = args.phase
+    RUN_SCRIPT = PROJ_DIR / PHASE_CONFIGS[ACTIVE_PHASE]["run_script"]
+    phase_desc = PHASE_CONFIGS[ACTIVE_PHASE]["desc_suffix"]
+
     # Üretilecek kombinasyon listesi
     if args.test:
         combos = [(2, 1, "MIN"), (2, 1, "MAX")]
-        print("=== TEST MODU: Yalnızca GW=2, Mesh=1 üretiliyor ===")
+        print(f"=== TEST MODU: Yalnızca GW=2, Mesh=1  [faz={ACTIVE_PHASE}: {phase_desc}] ===")
     elif args.gw and args.mesh:
         modes = MODES if (not args.mode or args.mode == "ALL") else [args.mode]
         combos = [(args.gw, args.mesh, m) for m in modes]
-        print(f"=== TEK KOMBİNASYON: GW={args.gw}, Mesh={args.mesh} ===")
+        print(f"=== TEK KOMBİNASYON: GW={args.gw}, Mesh={args.mesh}  [faz={ACTIVE_PHASE}] ===")
     else:
         combos = [
             (ng, mp, mo)
@@ -727,11 +796,12 @@ def main() -> None:
             for mp in MESH_PER_GAP_RANGE
             for mo in MODES
         ]
-        print(f"=== TAM ÜRETIM: {len(combos)} kombinasyon × 36 run = "
-              f"{len(combos)*36:,} simülasyon ===")
+        print(f"=== TAM ÜRETIM [faz={ACTIVE_PHASE}]: {len(combos)} kombinasyon × 36 run = "
+              f"{len(combos)*36:,} simülasyon  ({phase_desc}) ===")
 
     print(f"Proje dizini : {PROJ_DIR}")
     print(f"INI dosyası  : {INI_FILE}")
+    print(f"Run script   : {RUN_SCRIPT}")
     print(f"Dry-run      : {args.dry_run}")
     print("")
 
@@ -757,10 +827,10 @@ def main() -> None:
     if not args.dry_run:
         RUN_SCRIPT.write_text(run_sh_text, encoding="utf-8")
         RUN_SCRIPT.chmod(RUN_SCRIPT.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-        print(f"\nrun_massive.sh → {RUN_SCRIPT}  ({len(run_configs)} config, "
+        print(f"\n{RUN_SCRIPT.name} → {RUN_SCRIPT}  ({len(run_configs)} config, "
               f"{len(run_configs)*36:,} run)")
     else:
-        print(f"\n[DRY] run_massive.sh  ({len(run_configs)} config)")
+        print(f"\n[DRY] {RUN_SCRIPT.name}  ({len(run_configs)} config)")
 
     print("")
     print(f"=== Tamamlandı: {len(generated_configs)} topoloji üretildi ===")
@@ -781,10 +851,11 @@ def main() -> None:
                     print(f"  {ln}")
                 if in_sub and "connections" in ln:
                     break
-        print("─── INI Blok Başlangıcı (Scalable_GW2_Mesh1_MIN) ─────────────────────────")
+        test_cn = config_name(2, 1, "MIN")
+        print("─── INI Blok Başlangıcı ({test_cn}) ─────────────────────────────────────────")
         if not args.dry_run:
             ini_text = INI_FILE.read_text()
-            start = ini_text.find("[Config Scalable_GW2_Mesh1_MIN]")
+            start = ini_text.find(f"[Config {test_cn}]")
             if start >= 0:
                 snippet = ini_text[start:start+800]
                 print(snippet)
