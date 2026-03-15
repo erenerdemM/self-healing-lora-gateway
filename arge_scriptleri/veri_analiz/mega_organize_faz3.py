@@ -564,19 +564,22 @@ try:
                 max(20, max(d for d in deltas if not np.isnan(d))) + 3)
     ax.grid(True, alpha=0.25, linestyle=':', axis='y')
 
-    # ── Panel C: Kayıp Kaynakları Faz3 — Sensitivity vs Collision pie ─────────
+    # ── Panel C: Kayıp Kaynakları Faz3 — Radio katmanı bazında pie ────────────
+    # Multi-GW senaryosunda rcv_started > sent olabilir (birden fazla GW aynı
+    # paketi duyabilir). Bu yüzden oranları RADIO katmanında hesaplıyoruz:
+    #   radio_der_pct   = rcv_correct / rcv_started * 100  (doğru alım)
+    #   collision_pct   = collision / rcv_started * 100     (çarpışma)
+    #   "other_radio"   = 100 - radio_der_pct - collision_pct (diğer RF hata)
+    # Bu üçü her zaman [0,100] aralığında kalır.
     ax = axes[2]
-    mean_sens = df3p['sensitivity_loss_pct'].mean()
-    mean_col  = df3p['collision_loss_pct'].mean()
-    # "başarılı" = 100 - kayıplar  (radio_der_pct doğrudan kullanılabilir)
-    mean_success = df3p['radio_der_pct'].mean()
-    # Kalan (ince GW→NS kaybı gibi küçük deviasyonlar)
-    other = max(0.0, 100.0 - mean_sens - mean_col - mean_success)
+    mean_success = max(0.0, float(df3p['radio_der_pct'].mean()))
+    mean_col     = max(0.0, float(df3p['collision_pct'].mean()))
+    other        = max(0.0, 100.0 - mean_success - mean_col)
 
-    sizes  = [mean_success, mean_sens, mean_col, other]
-    labels = ['Başarılı\nAlım', 'Hassasiyet/\nGürültü Kaybı', 'Çarpışma\nKaybı', 'Diğer']
-    colors = ['#2ecc71', '#e74c3c', '#e67e22', '#95a5a6']
-    explode = (0.05, 0.1, 0.1, 0.0)
+    sizes  = [mean_success, mean_col, other]
+    labels = ['Başarılı\nAlım', 'Çarpışma\nKaybı', 'Diğer RF\nKayıp']
+    colors = ['#2ecc71', '#e67e22', '#e74c3c']
+    explode = (0.05, 0.1, 0.05)
     wedges, texts, autotexts = ax.pie(
         sizes, labels=labels, colors=colors, explode=explode,
         autopct=lambda p: f"{p:.1f}%" if p > 0.5 else '',
