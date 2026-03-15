@@ -293,14 +293,7 @@ try:
     print(f"  En Kırılgan SF: SF{worst_sf} ({sf_stats_faz3[worst_sf]:.2f}%)")
 
     # ── 3. Çarpışma vs Gürültü/Hassasiyet Kayıpları ───────────────────────────
-    total_sent_sum    = df3['total_sent'].sum()
-    total_coll_sum    = df3['total_collision'].sum()
-    total_started_sum = df3['total_rcv_started'].sum()
-    total_rcv_sum     = df3[pd.to_numeric(df3['total_rcv'], errors='coerce').notna()]['total_rcv'].sum() if 'total_rcv' in df3.columns else 0
-
-    not_started    = total_sent_sum - total_started_sum   # sensitivite/gürültü (sinyal eşiğe ulaşamadı)
-    started_failed = total_started_sum - df3['total_rcv_correct' if 'total_rcv_correct' in df3.columns else 'total_rcv_started'].sum() if 'total_rcv_correct' not in df3.columns else (total_started_sum - df3['total_rcv_correct'].sum())
-    # Daha basit yaklaşım: aggregate loss oranları
+    # Aggregate loss oranları (radio katmanı temelinde)
     mean_sens_loss = df3['sensitivity_loss_pct'].mean()
     mean_col_loss  = df3['collision_loss_pct'].mean()
     total_loss_pct = 100.0 - faz3_mean_der
