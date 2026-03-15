@@ -105,6 +105,24 @@ PHASE_CONFIGS = {
         "noise_floor_dBm": -105.0,
         "energy_detection_dBm": -95.0,
     },
+    4: {
+        # Arazi 1 — Trafik Yoğunluğu (Temporal Stress)
+        # Tüm Faz 3 stres faktörleri KORUNDU (engel + gürültü + sigma);
+        # ek olarak sendInterval 15s → kanal yükü ~4 kat artırıldı.
+        #   sendInterval = 15s  (Faz1-3: ~60s → 4× daha yoğun trafik)
+        #   LoRaWAN duty-cycle sınırına zorlama (çarpışma + kuyruk gecikmesi)
+        "sigma": 5.0,
+        "gamma": 2.8,
+        "obstacle_loss_db": 3.5,
+        "config_prefix": "Faz4_",
+        "run_script": "run_faz4.sh",
+        "log_base": "logs_massive_faz4",
+        "result_dir": "results_faz4",
+        "desc_suffix": "sigma=5.0, gamma=2.8, obstacle=3.5dB, noiseFloor=-105dBm, sendInterval=15s (TrafikYoğunluğu)",
+        "noise_floor_dBm": -105.0,
+        "energy_detection_dBm": -95.0,
+        "send_interval_override": "15s",     # SF bağımsız sabit trafik hızı
+    },
 }
 
 NUM_GW_RANGE       = range(2, 8)    # 2 .. 7  (7x7 sınırı: 6 GW değeri)
@@ -367,7 +385,12 @@ def generate_ini_block(num_gw: int, mper: int, mode: str, pos: dict) -> str:
         f"",
         f"# ── sensorSF paralel (!): sendInterval + gwSensitivity ────────────────────",
         f"**.sensorGW*[*].app[0].dataSize      = 20B",
-        f"**.sensorGW*[*].app[0].sendInterval  = ${{sfInterval   = {sf_int_str} ! sensorSF}}",
+        *([
+            f"**.sensorGW*[*].app[0].sendInterval  = {PHASE_CONFIGS[ACTIVE_PHASE]['send_interval_override']}",
+            f"# NOTE: sendInterval sabit {PHASE_CONFIGS[ACTIVE_PHASE]['send_interval_override']} — SF bağımsız trafik yoğunluğu testi",
+        ] if PHASE_CONFIGS[ACTIVE_PHASE].get('send_interval_override') else [
+            f"**.sensorGW*[*].app[0].sendInterval  = ${{sfInterval   = {sf_int_str} ! sensorSF}}",
+        ]),
         f"**.LoRaGWNic.radio.receiver.sensitivity = ${{gwSensitivity = {gw_sens_str} ! sensorSF}}",
         f"",
         f"# ── meshSF paralel (!): beaconInterval + cadDuration ──────────────────────",
@@ -784,7 +807,7 @@ def main() -> None:
         description="Devasa topoloji fabrikası: NED + INI + run_faz*.sh üretir"
     )
     parser.add_argument("--phase", type=int, default=1,
-                        choices=list(PHASE_CONFIGS.keys()),
+                        choices=sorted(PHASE_CONFIGS.keys()),
                         help=f"Faz numarası ({list(PHASE_CONFIGS.keys())}), varsayılan: 1")
     parser.add_argument("--test",    action="store_true",
                         help="Sadece GW=2, Mesh=1 (her iki mod) üret ve çık")
