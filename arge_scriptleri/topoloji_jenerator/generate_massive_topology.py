@@ -53,7 +53,7 @@ ACTIVE_PHASE = 1   # main() içinde --phase argümanıyla değiştirilir
 
 PHASE_CONFIGS = {
     1: {
-        # Arazi 1 — açık alan, engelsiz (Faz 1 temel ölçeklendirme)
+        # Arazi 1 — açık alan, engelsiz (Faz 1 İdeal, 180s Global Max)
         "sigma": 0.0,
         "gamma": 2.75,
         "obstacle_loss_db": 0.0,
@@ -61,18 +61,25 @@ PHASE_CONFIGS = {
         "run_script": "run_massive.sh",
         "log_base": "logs_massive",
         "result_dir": "results",
-        "desc_suffix": "sigma=0, backhaulCutTime=-1s",
+        "desc_suffix": "sigma=0, gamma=2.75, sendInterval=180s (BTK/KET GlobalMax)",
+        "noise_floor_dBm": None,
+        "energy_detection_dBm": None,
+        "send_interval_override": "180s",
     },
     2: {
-        # Arazi 2 — kentsel, yoğun gölgelenme + yüksek gamma (Faz 2 stres)
+        # Arazi 2 — kentsel, yoğun gölgelenme + beton engel 7dB (Faz 2 stres)
+        # obstacle_loss_db=7.0: ITU-R P.2040 beton duvar kaybı @ 868 MHz
         "sigma": 6.0,
         "gamma": 3.5,
-        "obstacle_loss_db": 0.0,
+        "obstacle_loss_db": 7.0,
         "config_prefix": "Faz2_",
         "run_script": "run_faz2.sh",
         "log_base": "logs_massive_faz2",
         "result_dir": "results_faz2",
-        "desc_suffix": "sigma=6.0, gamma=3.5 (shadowing+kentsel), Faz2",
+        "desc_suffix": "sigma=6.0, gamma=3.5, obstacle=7dB (beton), sendInterval=180s (BTK/KET GlobalMax)",
+        "noise_floor_dBm": None,
+        "energy_detection_dBm": None,
+        "send_interval_override": "180s",
     },
     21: {
         # Arazi 1 — Doğal engeller (foliage/wood) — ITU-R P.833 / P.2040 §4
@@ -84,9 +91,10 @@ PHASE_CONFIGS = {
         "run_script": "run_faz21.sh",
         "log_base": "logs_massive_faz2_v2",
         "result_dir": "results_faz2_v2",
-        "desc_suffix": "sigma=4.5, gamma=2.8, obstacle_loss=3.5dB (foliage/wood, Arazi1 dogal)",
+        "desc_suffix": "sigma=4.5, gamma=2.8, obstacle=3.5dB (foliage), sendInterval=180s (BTK/KET GlobalMax)",
         "noise_floor_dBm": None,         # varsayılan (INET default)
         "energy_detection_dBm": None,    # varsayılan
+        "send_interval_override": "180s",
     },
     3: {
         # Arazi 1 — Doğal engel + Gürültü Baskısı (ISM-band interference @ 868 MHz)
@@ -101,9 +109,10 @@ PHASE_CONFIGS = {
         "run_script": "run_faz3.sh",
         "log_base": "logs_massive_faz3",
         "result_dir": "results_faz3",
-        "desc_suffix": "sigma=5.0, gamma=2.8, obstacle=3.5dB, noiseFloor=-105dBm, energyDet=-95dBm (Gurultu)",
+        "desc_suffix": "sigma=5.0, gamma=2.8, obstacle=3.5dB, noiseFloor=-105dBm, sendInterval=180s (BTK/KET GlobalMax)",
         "noise_floor_dBm": -105.0,
         "energy_detection_dBm": -95.0,
+        "send_interval_override": "180s",
     },
     4: {
         # Arazi 1 — Trafik Yoğunluğu / Yasal Üst Sınır (BTK KET 868 MHz / %1 DC)
