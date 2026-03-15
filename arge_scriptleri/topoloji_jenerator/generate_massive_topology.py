@@ -106,11 +106,11 @@ PHASE_CONFIGS = {
         "energy_detection_dBm": -95.0,
     },
     4: {
-        # Arazi 1 — Trafik Yoğunluğu (Temporal Stress)
+        # Arazi 1 — Trafik Yoğunluğu / Yasal Üst Sınır (BTK KET 868 MHz / %1 DC)
         # Tüm Faz 3 stres faktörleri KORUNDU (engel + gürültü + sigma);
-        # ek olarak sendInterval 15s → kanal yükü ~4 kat artırıldı.
-        #   sendInterval = 15s  (Faz1-3: ~60s → 4× daha yoğun trafik)
-        #   LoRaWAN duty-cycle sınırına zorlama (çarpışma + kuyruk gecikmesi)
+        # sendInterval = 180s  →  SF12 için %1 duty-cycle yasal sınırı
+        #   SF12 ToA = 1.810s  →  DC = 1.810/180 = 1.005% ≈ %1 (BTK/ETSI limit)
+        #   Kanal kapasitesi maksimum yasal yüke zorlandı
         "sigma": 5.0,
         "gamma": 2.8,
         "obstacle_loss_db": 3.5,
@@ -118,10 +118,10 @@ PHASE_CONFIGS = {
         "run_script": "run_faz4.sh",
         "log_base": "logs_massive_faz4",
         "result_dir": "results_faz4",
-        "desc_suffix": "sigma=5.0, gamma=2.8, obstacle=3.5dB, noiseFloor=-105dBm, sendInterval=15s (TrafikYoğunluğu)",
+        "desc_suffix": "sigma=5.0, gamma=2.8, obstacle=3.5dB, noiseFloor=-105dBm, sendInterval=180s (BTK/KET YasalSinir)",
         "noise_floor_dBm": -105.0,
         "energy_detection_dBm": -95.0,
-        "send_interval_override": "15s",     # SF bağımsız sabit trafik hızı
+        "send_interval_override": "180s",    # BTK KET: SF12 %1 DC yasal üst sınırı
     },
 }
 
