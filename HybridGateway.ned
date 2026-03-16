@@ -110,6 +110,9 @@ module HybridGateway extends LoRaGW
         //   Dinamik kesinti: t=200s'de event üzerinden setBackhaulUp(false)
         bool backhaulUp = default(true);
 
+        // Backhaul RTT gecikme modeli (ms): 0=yok, 20=LTE, 200=DSL, 1000=uydu
+        double backhaulLatency @unit(ms) = default(0ms);
+
         // Ajanına parametre iletimi
         routingAgent.alpha                 = default(this.alpha);
         routingAgent.beta                  = default(this.beta);
@@ -117,6 +120,7 @@ module HybridGateway extends LoRaGW
         routingAgent.congestionThreshold   = default(this.congestionThreshold);
         routingAgent.backhaulCheckInterval = default(this.backhaulCheckInterval);
         routingAgent.backhaulUp            = default(this.backhaulUp);
+        routingAgent.backhaulLatency       = default(this.backhaulLatency);
 
     submodules:
         // Enerji deposu — simülasyon boyunca tüketimi izler

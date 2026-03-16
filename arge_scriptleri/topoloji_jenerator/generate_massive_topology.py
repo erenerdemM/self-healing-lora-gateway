@@ -49,88 +49,314 @@ INET_DIR    = "/home/eren/Desktop/bitirme_lora_kod/workspace/inet4.4"
 # ─────────────────────────────────────────────────────────────────────────────
 # Faz yapılandırmaları (--phase N ile seçilir)
 # ─────────────────────────────────────────────────────────────────────────────
-ACTIVE_PHASE = 1   # main() içinde --phase argümanıyla değiştirilir
+# KÜMÜLATİF HİYERARŞİ: Her faz bir öncekinin üzerine eklenir.
+#
+#  Faz1  : Baseline ideal (sigma=0, duty-cycle yok, engel yok)
+#  Faz2  : +SF bazlı sendInterval (BTK/ETSI %1 DC yasal üst sınırı)
+#  Faz3a : +Arazi engeli 0dB  (SF bazlı DC korunuyor)
+#  Faz3b : +Arazi engeli 2dB  (hafif foliage)
+#  Faz3c : +Arazi engeli 5dB  (yoğun foliage / alçak duvar)
+#  Faz4a : +Hava koşulu 0dB   (en kötü Faz3c üzerine)
+#  Faz4b : +Hava koşulu 0.5dB (orta yağmur, ITU-R P.838)
+#  Faz4c : +Hava koşulu 1.5dB (yoğun yağmur, ITU-R P.838)
+#  Faz5a : +Gürültü tabanı -115 dBm (referans: clean ISM)
+#  Faz5b : +Gürültü tabanı -110 dBm (hafif ISM interferansı)
+#  Faz5c : +Gürültü tabanı -105 dBm (yoğun ISM interferansı)
+#  Faz6a : +Backhaul gecikmesi 20ms  (LTE / fiber)
+#  Faz6b : +Backhaul gecikmesi 200ms (DSL / 3G)
+#  Faz6c : +Backhaul gecikmesi 1000ms (uydu / GPRS)
+#  Faz7  : +GW0 t=600s'de çöküş + mesh self-healing
+# ─────────────────────────────────────────────────────────────────────────────
+ACTIVE_PHASE = "1"   # main() içinde --phase argümanıyla değiştirilir
+
+# SF bazlı sendInterval: BTK/ETSI %1 duty-cycle → SF12 ToA=1.81s → 181s arası
+SF_SEND_INTERVALS = {
+    7:  "10s",    # SF7  ToA≈0.051s  → DC=0.51%
+    8:  "20s",    # SF8  ToA≈0.093s  → DC=0.47%
+    9:  "40s",    # SF9  ToA≈0.165s  → DC=0.41%
+    10: "65s",    # SF10 ToA≈0.288s  → DC=0.44%
+    11: "130s",   # SF11 ToA≈0.576s  → DC=0.44%
+    12: "180s",   # SF12 ToA≈1.810s  → DC=1.01% (yasal üst sınır)
+}
+
+# Faz 5b/5c/6/7 için kümülatif temel: Faz5c referans (all-stress)
+# sigma=5.0, gamma=2.8, obstacle=5.0dB (Faz3c), weather=1.5dB (Faz4c)
+# pl_d0_db = 31.54 + obstacle + weather
+_BASE_SIGMA   = 5.0
+_BASE_GAMMA   = 2.8
+_BASE_OBS_5C  = 5.0   # Faz3c sonrası en kötü durum
+_BASE_WEA_4C  = 1.5   # Faz4c sonrası en kötü durum
 
 PHASE_CONFIGS = {
-    1: {
-        # Arazi 1 — açık alan, engelsiz (Faz 1 İdeal, 180s Global Max)
+    # ── Faz 1: Baseline ideal ──────────────────────────────────────────────
+    "1": {
         "sigma": 0.0,
         "gamma": 2.75,
         "obstacle_loss_db": 0.0,
-        "config_prefix": "Scalable_",
-        "run_script": "run_massive.sh",
-        "log_base": "logs_massive",
-        "result_dir": "results",
-        "desc_suffix": "sigma=0, gamma=2.75, sendInterval=180s (BTK/KET GlobalMax)",
+        "weather_loss_db": 0.0,
+        "config_prefix": "Faz1_",
+        "run_script": "run_faz1.sh",
+        "log_base": "logs_faz1",
+        "result_dir": "results_faz1",
+        "desc_suffix": "Baseline: sigma=0, gamma=2.75, ideal kanal",
         "noise_floor_dBm": None,
         "energy_detection_dBm": None,
-        "send_interval_override": "180s",
+        "send_interval_override": "180s",   # DC kısıtı yok, sabit 180s
+        "sf_intervals": None,
+        "backhaul_latency_ms": 0,
+        "gw0_cut_time_s": -1,
     },
-    2: {
-        # Arazi 2 — kentsel, yoğun gölgelenme + beton engel 7dB (Faz 2 stres)
-        # obstacle_loss_db=7.0: ITU-R P.2040 beton duvar kaybı @ 868 MHz
-        "sigma": 6.0,
-        "gamma": 3.5,
-        "obstacle_loss_db": 7.0,
+    # ── Faz 2: +SF bazlı Duty-Cycle ────────────────────────────────────────
+    "2": {
+        "sigma": 0.0,
+        "gamma": 2.75,
+        "obstacle_loss_db": 0.0,
+        "weather_loss_db": 0.0,
         "config_prefix": "Faz2_",
         "run_script": "run_faz2.sh",
-        "log_base": "logs_massive_faz2",
+        "log_base": "logs_faz2",
         "result_dir": "results_faz2",
-        "desc_suffix": "sigma=6.0, gamma=3.5, obstacle=7dB (beton), sendInterval=180s (BTK/KET GlobalMax)",
+        "desc_suffix": "SF-bazlı DC: SF7=10s, SF10=65s, SF12=180s (BTK/ETSI %1)",
         "noise_floor_dBm": None,
         "energy_detection_dBm": None,
-        "send_interval_override": "180s",
+        "send_interval_override": None,  # SF_SEND_INTERVALS kullanılır
+        "sf_intervals": SF_SEND_INTERVALS,
+        "backhaul_latency_ms": 0,
+        "gw0_cut_time_s": -1,
     },
-    21: {
-        # Arazi 1 — Doğal engeller (foliage/wood) — ITU-R P.833 / P.2040 §4
-        # pl_d0_db = 31.54 + 3.5 = 35.04 dB  (ağaç/çalılık kaybı @ 868 MHz)
+    # ── Faz 3a: +Arazi engeli 0dB (referans — Faz2 ile aynı kanal) ─────────
+    "3a": {
+        "sigma": 2.0,
+        "gamma": 2.75,
+        "obstacle_loss_db": 0.0,
+        "weather_loss_db": 0.0,
+        "config_prefix": "Faz3a_",
+        "run_script": "run_faz3a.sh",
+        "log_base": "logs_faz3a",
+        "result_dir": "results_faz3a",
+        "desc_suffix": "Arazi0dB: sigma=2.0, obstacle=0dB, DC-SF",
+        "noise_floor_dBm": None,
+        "energy_detection_dBm": None,
+        "send_interval_override": None,
+        "sf_intervals": SF_SEND_INTERVALS,
+        "backhaul_latency_ms": 0,
+        "gw0_cut_time_s": -1,
+    },
+    # ── Faz 3b: +Arazi engeli 2dB (hafif foliage, ITU-R P.833) ────────────
+    "3b": {
+        "sigma": 3.0,
+        "gamma": 2.75,
+        "obstacle_loss_db": 2.0,
+        "weather_loss_db": 0.0,
+        "config_prefix": "Faz3b_",
+        "run_script": "run_faz3b.sh",
+        "log_base": "logs_faz3b",
+        "result_dir": "results_faz3b",
+        "desc_suffix": "Arazi2dB: sigma=3.0, obstacle=2dB (hafif foliage), DC-SF",
+        "noise_floor_dBm": None,
+        "energy_detection_dBm": None,
+        "send_interval_override": None,
+        "sf_intervals": SF_SEND_INTERVALS,
+        "backhaul_latency_ms": 0,
+        "gw0_cut_time_s": -1,
+    },
+    # ── Faz 3c: +Arazi engeli 5dB (yoğun foliage / alçak duvar) ───────────
+    "3c": {
+        "sigma": 4.0,
+        "gamma": 2.8,
+        "obstacle_loss_db": 5.0,
+        "weather_loss_db": 0.0,
+        "config_prefix": "Faz3c_",
+        "run_script": "run_faz3c.sh",
+        "log_base": "logs_faz3c",
+        "result_dir": "results_faz3c",
+        "desc_suffix": "Arazi5dB: sigma=4.0, obstacle=5dB (yoğun foliage), DC-SF",
+        "noise_floor_dBm": None,
+        "energy_detection_dBm": None,
+        "send_interval_override": None,
+        "sf_intervals": SF_SEND_INTERVALS,
+        "backhaul_latency_ms": 0,
+        "gw0_cut_time_s": -1,
+    },
+    # ── Faz 4a: +Hava koşulu 0dB (kuru, Faz3c üzerine) ────────────────────
+    "4a": {
+        "sigma": 4.0,
+        "gamma": 2.8,
+        "obstacle_loss_db": 5.0,
+        "weather_loss_db": 0.0,
+        "config_prefix": "Faz4a_",
+        "run_script": "run_faz4a.sh",
+        "log_base": "logs_faz4a",
+        "result_dir": "results_faz4a",
+        "desc_suffix": "Hava0dB: obstacle=5dB + weather=0dB, DC-SF",
+        "noise_floor_dBm": None,
+        "energy_detection_dBm": None,
+        "send_interval_override": None,
+        "sf_intervals": SF_SEND_INTERVALS,
+        "backhaul_latency_ms": 0,
+        "gw0_cut_time_s": -1,
+    },
+    # ── Faz 4b: +Hava koşulu 0.5dB (orta yağmur, ITU-R P.838) ─────────────
+    "4b": {
         "sigma": 4.5,
         "gamma": 2.8,
-        "obstacle_loss_db": 3.5,
-        "config_prefix": "Faz21_",
-        "run_script": "run_faz21.sh",
-        "log_base": "logs_massive_faz2_v2",
-        "result_dir": "results_faz2_v2",
-        "desc_suffix": "sigma=4.5, gamma=2.8, obstacle=3.5dB (foliage), sendInterval=180s (BTK/KET GlobalMax)",
-        "noise_floor_dBm": None,         # varsayılan (INET default)
-        "energy_detection_dBm": None,    # varsayılan
-        "send_interval_override": "180s",
+        "obstacle_loss_db": 5.0,
+        "weather_loss_db": 0.5,
+        "config_prefix": "Faz4b_",
+        "run_script": "run_faz4b.sh",
+        "log_base": "logs_faz4b",
+        "result_dir": "results_faz4b",
+        "desc_suffix": "Hava0.5dB: obstacle=5dB + weather=0.5dB, DC-SF",
+        "noise_floor_dBm": None,
+        "energy_detection_dBm": None,
+        "send_interval_override": None,
+        "sf_intervals": SF_SEND_INTERVALS,
+        "backhaul_latency_ms": 0,
+        "gw0_cut_time_s": -1,
     },
-    3: {
-        # Arazi 1 — Doğal engel + Gürültü Baskısı (ISM-band interference @ 868 MHz)
-        # Faz 2.1 üzerine gürültü bindirildi:
-        #   sigma   +0.5 → 5.0 dB  (gürültü kaynaklı ek dalgalanma)
-        #   noiseFloor -105 dBm   (-110 → -105, +5 dB gürültü tabanı yükseltisi)
-        #   energyDetection -95 dBm (ISM komşu-kanal interferansı)
-        "sigma": 5.0,
-        "gamma": 2.8,
-        "obstacle_loss_db": 3.5,
-        "config_prefix": "Faz3_",
-        "run_script": "run_faz3.sh",
-        "log_base": "logs_massive_faz3",
-        "result_dir": "results_faz3",
-        "desc_suffix": "sigma=5.0, gamma=2.8, obstacle=3.5dB, noiseFloor=-105dBm, sendInterval=180s (BTK/KET GlobalMax)",
+    # ── Faz 4c: +Hava koşulu 1.5dB (yoğun yağmur, ITU-R P.838) ───────────
+    "4c": {
+        "sigma": _BASE_SIGMA,
+        "gamma": _BASE_GAMMA,
+        "obstacle_loss_db": _BASE_OBS_5C,
+        "weather_loss_db": _BASE_WEA_4C,
+        "config_prefix": "Faz4c_",
+        "run_script": "run_faz4c.sh",
+        "log_base": "logs_faz4c",
+        "result_dir": "results_faz4c",
+        "desc_suffix": "Hava1.5dB: obstacle=5dB + weather=1.5dB, DC-SF",
+        "noise_floor_dBm": None,
+        "energy_detection_dBm": None,
+        "send_interval_override": None,
+        "sf_intervals": SF_SEND_INTERVALS,
+        "backhaul_latency_ms": 0,
+        "gw0_cut_time_s": -1,
+    },
+    # ── Faz 5a: +Gürültü -115dBm (referans clean ISM, Faz4c üzerine) ───────
+    "5a": {
+        "sigma": _BASE_SIGMA,
+        "gamma": _BASE_GAMMA,
+        "obstacle_loss_db": _BASE_OBS_5C,
+        "weather_loss_db": _BASE_WEA_4C,
+        "config_prefix": "Faz5a_",
+        "run_script": "run_faz5a.sh",
+        "log_base": "logs_faz5a",
+        "result_dir": "results_faz5a",
+        "desc_suffix": "Gurultu-115dBm: Faz4c + noiseFloor=-115dBm",
+        "noise_floor_dBm": -115.0,
+        "energy_detection_dBm": -105.0,
+        "send_interval_override": None,
+        "sf_intervals": SF_SEND_INTERVALS,
+        "backhaul_latency_ms": 0,
+        "gw0_cut_time_s": -1,
+    },
+    # ── Faz 5b: +Gürültü -110dBm (hafif ISM interferansı) ──────────────────
+    "5b": {
+        "sigma": _BASE_SIGMA,
+        "gamma": _BASE_GAMMA,
+        "obstacle_loss_db": _BASE_OBS_5C,
+        "weather_loss_db": _BASE_WEA_4C,
+        "config_prefix": "Faz5b_",
+        "run_script": "run_faz5b.sh",
+        "log_base": "logs_faz5b",
+        "result_dir": "results_faz5b",
+        "desc_suffix": "Gurultu-110dBm: Faz4c + noiseFloor=-110dBm",
+        "noise_floor_dBm": -110.0,
+        "energy_detection_dBm": -100.0,
+        "send_interval_override": None,
+        "sf_intervals": SF_SEND_INTERVALS,
+        "backhaul_latency_ms": 0,
+        "gw0_cut_time_s": -1,
+    },
+    # ── Faz 5c: +Gürültü -105dBm (yoğun ISM interferansı) ──────────────────
+    "5c": {
+        "sigma": _BASE_SIGMA,
+        "gamma": _BASE_GAMMA,
+        "obstacle_loss_db": _BASE_OBS_5C,
+        "weather_loss_db": _BASE_WEA_4C,
+        "config_prefix": "Faz5c_",
+        "run_script": "run_faz5c.sh",
+        "log_base": "logs_faz5c",
+        "result_dir": "results_faz5c",
+        "desc_suffix": "Gurultu-105dBm: Faz4c + noiseFloor=-105dBm",
         "noise_floor_dBm": -105.0,
         "energy_detection_dBm": -95.0,
-        "send_interval_override": "180s",
+        "send_interval_override": None,
+        "sf_intervals": SF_SEND_INTERVALS,
+        "backhaul_latency_ms": 0,
+        "gw0_cut_time_s": -1,
     },
-    4: {
-        # Arazi 1 — Trafik Yoğunluğu / Yasal Üst Sınır (BTK KET 868 MHz / %1 DC)
-        # Tüm Faz 3 stres faktörleri KORUNDU (engel + gürültü + sigma);
-        # sendInterval = 180s  →  SF12 için %1 duty-cycle yasal sınırı
-        #   SF12 ToA = 1.810s  →  DC = 1.810/180 = 1.005% ≈ %1 (BTK/ETSI limit)
-        #   Kanal kapasitesi maksimum yasal yüke zorlandı
-        "sigma": 5.0,
-        "gamma": 2.8,
-        "obstacle_loss_db": 3.5,
-        "config_prefix": "Faz4_",
-        "run_script": "run_faz4.sh",
-        "log_base": "logs_massive_faz4",
-        "result_dir": "results_faz4",
-        "desc_suffix": "sigma=5.0, gamma=2.8, obstacle=3.5dB, noiseFloor=-105dBm, sendInterval=180s (BTK/KET YasalSinir)",
+    # ── Faz 6a: +Backhaul gecikmesi 20ms (LTE/fiber) ────────────────────────
+    "6a": {
+        "sigma": _BASE_SIGMA,
+        "gamma": _BASE_GAMMA,
+        "obstacle_loss_db": _BASE_OBS_5C,
+        "weather_loss_db": _BASE_WEA_4C,
+        "config_prefix": "Faz6a_",
+        "run_script": "run_faz6a.sh",
+        "log_base": "logs_faz6a",
+        "result_dir": "results_faz6a",
+        "desc_suffix": "Backhaul20ms: Faz5c + backhaulLatency=20ms (LTE)",
         "noise_floor_dBm": -105.0,
         "energy_detection_dBm": -95.0,
-        "send_interval_override": "180s",    # BTK KET: SF12 %1 DC yasal üst sınırı
+        "send_interval_override": None,
+        "sf_intervals": SF_SEND_INTERVALS,
+        "backhaul_latency_ms": 20,
+        "gw0_cut_time_s": -1,
+    },
+    # ── Faz 6b: +Backhaul gecikmesi 200ms (DSL/3G) ──────────────────────────
+    "6b": {
+        "sigma": _BASE_SIGMA,
+        "gamma": _BASE_GAMMA,
+        "obstacle_loss_db": _BASE_OBS_5C,
+        "weather_loss_db": _BASE_WEA_4C,
+        "config_prefix": "Faz6b_",
+        "run_script": "run_faz6b.sh",
+        "log_base": "logs_faz6b",
+        "result_dir": "results_faz6b",
+        "desc_suffix": "Backhaul200ms: Faz5c + backhaulLatency=200ms (DSL)",
+        "noise_floor_dBm": -105.0,
+        "energy_detection_dBm": -95.0,
+        "send_interval_override": None,
+        "sf_intervals": SF_SEND_INTERVALS,
+        "backhaul_latency_ms": 200,
+        "gw0_cut_time_s": -1,
+    },
+    # ── Faz 6c: +Backhaul gecikmesi 1000ms (uydu/GPRS) ─────────────────────
+    "6c": {
+        "sigma": _BASE_SIGMA,
+        "gamma": _BASE_GAMMA,
+        "obstacle_loss_db": _BASE_OBS_5C,
+        "weather_loss_db": _BASE_WEA_4C,
+        "config_prefix": "Faz6c_",
+        "run_script": "run_faz6c.sh",
+        "log_base": "logs_faz6c",
+        "result_dir": "results_faz6c",
+        "desc_suffix": "Backhaul1000ms: Faz5c + backhaulLatency=1000ms (uydu)",
+        "noise_floor_dBm": -105.0,
+        "energy_detection_dBm": -95.0,
+        "send_interval_override": None,
+        "sf_intervals": SF_SEND_INTERVALS,
+        "backhaul_latency_ms": 1000,
+        "gw0_cut_time_s": -1,
+    },
+    # ── Faz 7: +GW0 t=600s çöküşü + mesh self-healing ──────────────────────
+    "7": {
+        "sigma": _BASE_SIGMA,
+        "gamma": _BASE_GAMMA,
+        "obstacle_loss_db": _BASE_OBS_5C,
+        "weather_loss_db": _BASE_WEA_4C,
+        "config_prefix": "Faz7_",
+        "run_script": "run_faz7.sh",
+        "log_base": "logs_faz7",
+        "result_dir": "results_faz7",
+        "desc_suffix": "SelfHeal: Faz6c + GW0-cut@600s (mesh failover testi)",
+        "noise_floor_dBm": -105.0,
+        "energy_detection_dBm": -95.0,
+        "send_interval_override": None,
+        "sf_intervals": SF_SEND_INTERVALS,
+        "backhaul_latency_ms": 1000,
+        "gw0_cut_time_s": 600,  # GW0 t=600s'de backhaul kesilir
     },
 }
 
@@ -159,6 +385,26 @@ def net_name(num_gw: int, mper: int, mode: str) -> str:
 
 def config_name(num_gw: int, mper: int, mode: str) -> str:
     return f"{PHASE_CONFIGS[ACTIVE_PHASE]['config_prefix']}GW{num_gw}_Mesh{mper}_{mode}"
+
+
+def _build_send_interval_lines() -> list:
+    """SF bazlı veya sabit sendInterval INI satırlarını üretir."""
+    pc = PHASE_CONFIGS[ACTIVE_PHASE]
+    if pc.get("send_interval_override"):
+        val = pc["send_interval_override"]
+        return [
+            f"**.sensorGW*[*].app[0].sendInterval  = {val}",
+            f"# NOTE: sendInterval sabit {val} — Faz1 ideal trafik (DC kısıtı yok)",
+        ]
+    sf_map = pc.get("sf_intervals") or SF_SEND_INTERVALS
+    # OMNeT++ paralel iterasyon: {sfInterval = v7, v8, ... ! sensorSF}
+    ordered = [sf_map[sf] for sf in [7, 8, 9, 10, 11, 12]]
+    val_str = ", ".join(ordered)
+    return [
+        f"**.sensorGW*[*].app[0].sendInterval  = ${{sfInterval  = {val_str} ! sensorSF}}",
+        f"# SF-bazlı sendInterval: SF7={ordered[0]} SF10={ordered[3]} SF12={ordered[5]} (BTK/ETSI %1 DC)",
+    ]
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Pozisyon hesaplama
@@ -266,7 +512,7 @@ def generate_ned(num_gw: int, mper: int, mode: str, pos: dict) -> str:
         f'                @display("p=2500,200;is=vs");',
         f'        }}',
         f"",
-        f"        // ── HybridGateway'ler ({'daima çevrimiçi, backhaulCutTime=-1s'}) ──",
+        f"        // ── HybridGateway'ler (backhaulCutTime: Faz7'de GW0={PHASE_CONFIGS[ACTIVE_PHASE]['gw0_cut_time_s']}s) ──",
     ]
 
     for i in range(num_gw):
@@ -394,12 +640,7 @@ def generate_ini_block(num_gw: int, mper: int, mode: str, pos: dict) -> str:
         f"",
         f"# ── sensorSF paralel (!): sendInterval + gwSensitivity ────────────────────",
         f"**.sensorGW*[*].app[0].dataSize      = 20B",
-        *([
-            f"**.sensorGW*[*].app[0].sendInterval  = {PHASE_CONFIGS[ACTIVE_PHASE]['send_interval_override']}",
-            f"# NOTE: sendInterval sabit {PHASE_CONFIGS[ACTIVE_PHASE]['send_interval_override']} — SF bağımsız trafik yoğunluğu testi",
-        ] if PHASE_CONFIGS[ACTIVE_PHASE].get('send_interval_override') else [
-            f"**.sensorGW*[*].app[0].sendInterval  = ${{sfInterval   = {sf_int_str} ! sensorSF}}",
-        ]),
+        *(_build_send_interval_lines()),
         f"**.LoRaGWNic.radio.receiver.sensitivity = ${{gwSensitivity = {gw_sens_str} ! sensorSF}}",
         f"",
         f"# ── meshSF paralel (!): beaconInterval + cadDuration ──────────────────────",
@@ -409,7 +650,7 @@ def generate_ini_block(num_gw: int, mper: int, mode: str, pos: dict) -> str:
         f"# ── LoRaWAN Fiziksel Ortam ─────────────────────────────────────────────────",
         f"**.radioMedium.pathLoss.d0          = 1m",
         f"**.radioMedium.pathLoss.gamma       = {PHASE_CONFIGS[ACTIVE_PHASE]['gamma']}",
-        f"**.radioMedium.pathLoss.pl_d0_db    = {31.54 + PHASE_CONFIGS[ACTIVE_PHASE]['obstacle_loss_db']:.2f}",
+        f"**.radioMedium.pathLoss.pl_d0_db    = {31.54 + PHASE_CONFIGS[ACTIVE_PHASE]['obstacle_loss_db'] + PHASE_CONFIGS[ACTIVE_PHASE].get('weather_loss_db', 0.0):.2f}",
         f"**.radioMedium.pathLoss.max_sensitivity_dBm = -115.0",  # -141→-115: commRange 30km→3.5km (spatial reuse)
         f"**.radioMedium.mediumLimitCache.maxTransmissionDuration = 5s",
         f"**.radioMedium.mediumLimitCache.maxTransmissionPower = 0.025118W",  # fix NaN → enables commRange rangeFilter
@@ -435,18 +676,23 @@ def generate_ini_block(num_gw: int, mper: int, mode: str, pos: dict) -> str:
         L.append(f"**.gwRouter{i}.ipv4.forwarding     = true")
         L.append(f"**.hybridGW{i}.ipv4.forwarding     = true")
 
+    _phase = PHASE_CONFIGS[ACTIVE_PHASE]
+    _lat_ms    = _phase.get("backhaul_latency_ms", 0)
+    _gw0_cut   = _phase.get("gw0_cut_time_s", -1)
+
     L += [
         f"",
-        f"# ── Global GW parametreleri (backhaulCutTime=-1s → daima çevrimiçi) ────────",
+        f"# ── Global GW parametreleri ────────────────────────────────────────────────",
         f"**.LoRaGWNic.radio.iAmGateway              = true",
         f"**.packetForwarder.localPort               = 2000",
         f"**.packetForwarder.destPort                = 1000",
-        f"**.routingAgent.backhaulCutTime            = -1s",
+        f"**.routingAgent.backhaulCutTime            = -1s",     # varsayılan (per-GW ezilir)
+        f"**.routingAgent.backhaulLatency            = {_lat_ms}ms",
         f"**.routingAgent.maxQueueSize               = 200",
         f"**.routingAgent.neighborTimeout            = 120s",
         f"**.routingAgent.bandMTxPower_dBm           = 14.0",
         f"**.routingAgent.bandMDutyCycle             = 0.01",
-        f"**.routingAgent.rx2TxPower_dBm             = 14.0",  # 27→14 dBm: standart LoRa txPower
+        f"**.routingAgent.rx2TxPower_dBm             = 14.0",
         f"**.routingAgent.rx2DutyCycle               = 0.10",
         f"**.routingAgent.rx2Frequency               = 869.525MHz",
         f"**.routingAgent.antennaGain_dBi            = 0.0",
@@ -455,7 +701,7 @@ def generate_ini_block(num_gw: int, mper: int, mode: str, pos: dict) -> str:
         f"**.routingAgent.beaconRssi                 = -72.0",
         f"**.routingAgent.sensorPacketRate           = 5.0",
         f"",
-        f"# ── Per-GW: destAddresses, meshAddress, meshNeighborList ───────────────────",
+        f"# ── Per-GW: destAddresses, meshAddress, meshNeighborList, GW0 cut ──────────",
     ]
 
     for i in range(num_gw):
@@ -464,6 +710,10 @@ def generate_ini_block(num_gw: int, mper: int, mode: str, pos: dict) -> str:
             f'**.hybridGW{i}.routingAgent.meshAddress       = "10.1.0.{i+1}"',
             f'**.hybridGW{i}.routingAgent.meshNeighborList  = "{all_gw_names} meshNode"',
         ]
+        # Faz7: GW0 t=600s'de backhaul kesilir (mesh self-healing testi)
+        if i == 0 and _gw0_cut > 0:
+            L.append(f'**.hybridGW0.routingAgent.backhaulCutTime = {_gw0_cut}s  '
+                     f'# Faz7: GW0 t={_gw0_cut}s backhaul kesme → mesh failover')
 
     L += [
         f"",
@@ -815,9 +1065,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Devasa topoloji fabrikası: NED + INI + run_faz*.sh üretir"
     )
-    parser.add_argument("--phase", type=int, default=1,
+    parser.add_argument("--phase", type=str, default="1",
                         choices=sorted(PHASE_CONFIGS.keys()),
-                        help=f"Faz numarası ({list(PHASE_CONFIGS.keys())}), varsayılan: 1")
+                        help=f"Faz kodu (örn: 1,2,3a,3b,3c,4a,...,7), varsayılan: 1")
     parser.add_argument("--test",    action="store_true",
                         help="Sadece GW=2, Mesh=1 (her iki mod) üret ve çık")
     parser.add_argument("--dry-run", action="store_true",

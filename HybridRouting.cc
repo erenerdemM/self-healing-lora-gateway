@@ -78,7 +78,8 @@ void HybridRouting::initialize(int stage)
         beaconRssi_       = par("beaconRssi");
         maxQueueSize_     = par("maxQueueSize");
         sensorPacketRate_ = par("sensorPacketRate");
-        backhaulCutTime_s_= par("backhaulCutTime");
+        backhaulCutTime_s_   = par("backhaulCutTime");
+        backhaulLatency_ms_  = par("backhaulLatency");
         currentQueueOcc_  = 0.05 + uniform(0.0, 0.08);  // rastgele başlangıç
         failoverLogCounter_ = 0;
 
@@ -246,6 +247,24 @@ void HybridRouting::handleMessage(cMessage *msg)
             return;
         }
 
+        // ── backhaulLatencyTimer: internet RTT süresi doldu, kararı ver ─────
+        if (backhaulLatencyTimer_ && msg == backhaulLatencyTimer_) {
+            cMessage *pm = pendingLatencyMsg_;
+            pendingLatencyMsg_ = nullptr;
+            if (pm) {
+                cMessage *decision = new cMessage("routeDecision_direct");
+                decision->setKind(0);
+                if (gate("routeDecisionOut")->isConnected())
+                    send(decision, "routeDecisionOut");
+                else {
+                    EV_WARN << "[HybridRouting] routeDecisionOut bağlı değil — latency karar düşürüldü.\n";
+                    delete decision;
+                }
+                delete pm;
+            }
+            return;
+        }
+
         if (msg == backhaulTimer_) {
             checkBackhaulStatus();
             // Bir sonraki kontrol döngüsünü planla
@@ -404,15 +423,26 @@ void HybridRouting::processRouteRequest(cMessage *msg)
                 << "  Sensör verisi doğrudan NetworkServer'a iletiliyor.\n"
                 << "  MESH'E SENSÖR VERİSİ GÖNDERİLMİYOR — Sadece beacon yayınlanır.\n";
 
-        cMessage *decision = new cMessage("routeDecision_direct");
-        decision->setKind(0);
-        if (gate("routeDecisionOut")->isConnected())
-            send(decision, "routeDecisionOut");
-        else {
-            EV_WARN << "[HybridRouting] routeDecisionOut bağlı değil — karar düşürüldü (V1).\n";
-            delete decision;
+        if (backhaulLatency_ms_ > 0.0) {
+            // Backhaul RTT modeli: kararı backhaulLatency_ms_ sonra ver
+            EV_INFO << "[HybridRouting] backhaulLatency eki: "
+                    << backhaulLatency_ms_ << "ms — karar geciktiriliyor.\n";
+            if (pendingLatencyMsg_) { delete pendingLatencyMsg_; }
+            pendingLatencyMsg_ = msg;
+            if (!backhaulLatencyTimer_)
+                backhaulLatencyTimer_ = new cMessage("backhaulLatencyTimer");
+            scheduleAt(simTime() + backhaulLatency_ms_ / 1000.0, backhaulLatencyTimer_);
+        } else {
+            cMessage *decision = new cMessage("routeDecision_direct");
+            decision->setKind(0);
+            if (gate("routeDecisionOut")->isConnected())
+                send(decision, "routeDecisionOut");
+            else {
+                EV_WARN << "[HybridRouting] routeDecisionOut bağlı değil — karar düşürüldü (V1).\n";
+                delete decision;
+            }
+            delete msg;
         }
-        delete msg;
     } else {
         EV_WARN << "[HybridRouting] ◆ SENARYO B — İNTERNET KESİNTİSİ ◆\n"
                 << "  t=" << simTime() << "s  addr=" << par("meshAddress").stringValue() << "\n"
@@ -433,7 +463,9 @@ void HybridRouting::finish()
     cancelAndDelete(beaconTimer_);     beaconTimer_       = nullptr;
     cancelAndDelete(backhaulCutTimer_); backhaulCutTimer_ = nullptr;
     cancelAndDelete(processTimer_);    processTimer_      = nullptr;
+    cancelAndDelete(backhaulLatencyTimer_); backhaulLatencyTimer_ = nullptr;
     if (pendingMsg_) { delete pendingMsg_; pendingMsg_ = nullptr; }
+    if (pendingLatencyMsg_) { delete pendingLatencyMsg_; pendingLatencyMsg_ = nullptr; }
 
     EV_INFO << "[HybridRouting] finish: zamanlayıcılar temizlendi. "
             << "Komşu tablosu boyutu: " << neighborTable_.size() << "\n";

@@ -82,6 +82,10 @@ simple HybridRouting
         // omnetpp.ini: **.hybridGW1.routingAgent.backhaulCutTime = 200s
         double backhaulCutTime @unit(s) = default(-1s);
 
+        // Backhaul RTT gecikme eki (ms): 0=yok, 20=LTE, 200=DSL, 1000=uydu
+        // omnetpp.ini: **.routingAgent.backhaulLatency = 200ms
+        double backhaulLatency @unit(ms) = default(0ms);
+
         // ── İşlemci Gecikmesi (STM32 PCB gerçekliği) ─────────────────────
         // SX1303 SPI paketi okuma → DMA kopyalama → CPU ISR → routing kararı
         // Gerçek STM32H7 ölçümleri: 5–15 ms arası (SPI@10MHz, 51B paket)

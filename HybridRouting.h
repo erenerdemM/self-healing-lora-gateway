@@ -138,6 +138,7 @@ class HybridRouting : public cSimpleModule
     double sensorPacketRate_;    // Sensör paket varış hızı (pkt/s)
     int    maxQueueSize_;        // Kuyruk kapasitesi (pkt)
     double backhaulCutTime_s_;   // Bu zamanda backhaul kesilir (< 0 = yok)
+    double backhaulLatency_ms_;  // Backhaul round-trip gecikme eki (ms, 0=yok)
 
     // Dinamik kuyruk doluluk oranı [0..1] — her backhaulTimer'da güncellenir
     double currentQueueOcc_;
@@ -180,6 +181,8 @@ class HybridRouting : public cSimpleModule
     cMessage *backhaulTimer_         = nullptr;  // Backhaul durumu kontrol döngüsü
     cMessage *beaconTimer_           = nullptr;  // Periyodik beacon yayını
     cMessage *backhaulCutTimer_      = nullptr;  // Tek seferlik backhaul kesme
+    cMessage *backhaulLatencyTimer_  = nullptr;  // Backhaul RTT gecikme modeli
+    cMessage *pendingLatencyMsg_     = nullptr;  // Gecikme bekleyen orijinal paket
 
     /** Tüm ağdaki MeshRouting ve HybridRouting modüllerine beacon gönder. */
     void broadcastBeaconToMeshNeighbors();
