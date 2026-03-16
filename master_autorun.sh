@@ -30,6 +30,10 @@ source "${VENV}/bin/activate"
 python3 -c "import psutil" 2>/dev/null || pip install psutil -q
 export PYTHONUNBUFFERED=1
 
+# ─── Sabit iş sayısı (0 = dinamik psutil ölçümü) ─────────────────────────────
+# Tüm çekirdekleri kullanmak için cpu_count - 1 sabit değer:
+OVERRIDE_JOBS=$(( $(nproc) - 1 ))   # 8 çekirdek → 7 paralel iş
+
 # ─── Faz sırası ───────────────────────────────────────────────────────────────
 PHASE_ORDER=(1 2 3a 3b 3c 4a 4b 4c 5a 5b 5c 6a 6b 6c 7)
 
@@ -199,7 +203,12 @@ for PHASE in "${PHASE_ORDER[@]}"; do
     TOTAL_RUNS=3024   # 84 config × 36 run
 
     # ── Adım 2: Dinamik CPU + Simülasyon ─────────────────────────────────────
-    JOBS=$(get_dynamic_jobs)
+    # OVERRIDE_JOBS > 0 ise dinamik hesaplamayı atla
+    if [[ "${OVERRIDE_JOBS:-0}" -gt 0 ]]; then
+        JOBS="${OVERRIDE_JOBS}"
+    else
+        JOBS=$(get_dynamic_jobs)
+    fi
     log "[Faz ${PHASE}] 2/3 Simülasyon başlatılıyor — ${RUN_SCRIPT}  (${JOBS} paralel iş)"
 
     LAST_TELEMETRY=$(date +%s)
@@ -224,8 +233,8 @@ for PHASE in "${PHASE_ORDER[@]}"; do
             LAST_JOBS_CHECK=${NOW}
         fi
 
-        # Saatlik telemetri
-        if (( NOW - LAST_TELEMETRY >= 3600 )); then
+        # Saatlik telemetri (15 dakikada bir — faz 1 saatin altında bittiği için)
+        if (( NOW - LAST_TELEMETRY >= 900 )); then
             DONE_COUNT=$(find "${PROJ_DIR}/${LOG_BASE}" -name "*.done" 2>/dev/null | wc -l || echo 0)
             print_telemetry "${PHASE}" "${DONE_COUNT}" "${TOTAL_RUNS}" "${START_PHASE}" "${JOBS}"
             LAST_TELEMETRY=${NOW}
