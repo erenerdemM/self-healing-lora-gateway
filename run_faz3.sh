@@ -5,7 +5,7 @@
 # Toplam config : 84
 # Run/config    : 36  (sensorSF 7..12 × meshSF 7..12)
 # Toplam run    : 3024
-# Phase         : 3  (sigma=5.0, gamma=2.8, obstacle=3.5dB, noiseFloor=-105dBm, energyDet=-95dBm (Gurultu))
+# Phase         : 3  (sigma=5.0, gamma=2.8, obstacle=3.5dB, noiseFloor=-105dBm, sendInterval=180s (BTK/KET GlobalMax))
 #
 # Kullanım:
 #   bash run_faz3.sh [--jobs N] [--from-config IDX] [--to-config IDX]
