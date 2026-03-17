@@ -16,9 +16,9 @@ INI="${PROJ_DIR}/omnetpp.ini"
 LOG="${PROJ_DIR}/master_autorun.log"
 CHECKPOINT="${PROJ_DIR}/.campaign_checkpoint"
 
-declare -A FAZ_RUNS=([1]=36 [2]=108 [3]=324 [4]=972 [5]=2916 [6]=8748 [7]=8748)
+declare -A FAZ_RUNS=([1]=36 [2]=72 [3]=144 [4]=288 [5]=576 [6]=1152 [7]=1152)
 TOTAL_FAZ=7
-W=53    # Kutu iç genişliği (─ sayısı)
+W=57    # Kutu iç genişliği (─ sayısı)
 
 # ── Aktif faz tespiti ─────────────────────────────────────────
 AKTIF_FAZ=1
@@ -66,7 +66,7 @@ fi
 
 # ── Paralel simülasyon sayısı ─────────────────────────────────
 # -f: tam komut satırına bak (binary adı >15 karakter olduğu için gerekli)
-PARALEL=$(pgrep -cf lora_mesh_projesi_dbg 2>/dev/null || echo 0)
+PARALEL=$(pgrep -f "lora_mesh_projesi_dbg" 2>/dev/null | wc -l)
 
 # ── Hız: son 5 dk'da üretilen SCA dosyalarından hesapla ──────
 RECENT=$(find "${PROJ_DIR}/results_faz${AKTIF_FAZ}" \
@@ -86,16 +86,50 @@ else
     ETA_STR="hesaplanıyor..."
 fi
 
-# ── CPU kullanımı ─────────────────────────────────────────────
-# top -bn2: iki örnek alır → daha doğru; Türkçe locale için [.,] kabul et
-CPU=$(top -bn2 -d0.3 2>/dev/null \
-    | grep -E "^(%Cpu|Cpu)" \
-    | tail -1 \
-    | grep -oP '[\d]+[.,][\d]+(?=\s*us)' \
-    | head -1 \
-    | tr ',' '.')
-[[ -z "$CPU" ]] && CPU="?"
-CORES=$(nproc 2>/dev/null || echo "?")
+# ── CPU kullanımı (toplam + per-core) ──────────────────────────
+CORES=$(nproc 2>/dev/null || echo "8")
+
+# mpstat varsa per-core, yoksa top fallback
+if command -v mpstat &>/dev/null; then
+    # LC_ALL=C → ondalık nokta; Average: satırlarını kullan (daha kararlı)
+    MPSTAT_OUT=$(LC_ALL=C mpstat -P ALL 1 1 2>/dev/null | grep "^Average:")
+    CPU=$(echo "$MPSTAT_OUT" | awk '$2=="all"{printf "%.1f", 100-$NF}')
+    [[ -z "$CPU" ]] && CPU="?"
+    # Her core için kullanım yüzdesi
+    CORE_USAGE=$(echo "$MPSTAT_OUT" | awk '
+        $2!="all" && $2~/^[0-9]/ {
+            used = 100 - $NF
+            printf "C%s:%2.0f%%  ", $2, used
+        }' | sed 's/[[:space:]]*$//')
+else
+    CPU=$(top -bn2 -d0.3 2>/dev/null \
+        | grep -E "^(%Cpu|Cpu)" \
+        | tail -1 \
+        | grep -oP '[\d]+[.,][\d]+(?=\s*us)' \
+        | head -1 \
+        | tr ',' '.')
+    [[ -z "$CPU" ]] && CPU="?"
+    # Fallback: /proc/stat'tan per-core hesapla (tek snapshot, yaklaşık)
+    CORE_USAGE=$(awk '/^cpu[0-9]/{                               \
+        name=$1; usr=$2; nic=$3; sys=$4; idle=$5;               \
+        tot=usr+nic+sys+idle+$6+$7+$8;                          \
+        if(tot>0) used=int((tot-idle)*100/tot);                  \
+        else used=0;                                             \
+        printf "C%s:%d%%  ", substr(name,4,99), used            \
+    }' /proc/stat | sed 's/  *$//')
+fi
+
+# Affinity modu (gece/gündüz)
+AFF=$(cat /tmp/lora_cpu_affinity 2>/dev/null || echo "1-7")
+if [[ "$AFF" == "0-7" ]]; then
+    AFF_MOD="GECE (8 core)"
+else
+    AFF_MOD="GÜNDÜZ (7 core)"
+fi
+
+# Sıcaklık
+TEMP=$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null | awk '{printf "%.0f", $1/1000}')
+[[ -z "$TEMP" ]] && TEMP="?"
 
 # ── Tüm kampanyanın bitiş tahmini ───────────────────────────────────────────
 NOW_S=$(date +%s)
@@ -150,6 +184,27 @@ center_row() {
 # ── Raporu yazdır ─────────────────────────────────────────────
 ZAMAN=$(date '+%H:%M:%S')
 
+# ── Per-core satırları (4'er core'luk 2 satır) ─────────────────
+# C0:85%  C1:92%  C2:78%  C3:95%
+make_core_rows() {
+    local all=()
+    # CORE_USAGE'ı diziye ayır
+    IFS='  ' read -ra all <<< "$CORE_USAGE"
+    local line="  "
+    local count=0
+    for item in "${all[@]}"; do
+        [[ -z "$item" ]] && continue
+        line+="${item}  "
+        (( count++ ))
+        if [[ $count -eq 4 ]]; then
+            row "$line"
+            line="  "
+            count=0
+        fi
+    done
+    [[ $count -gt 0 ]] && row "$line"
+}
+
 printf "┌%s┐\n" "$(hrule)"
 center_row "KAMPANYA DURUM RAPORU — ${ZAMAN}"
 printf "├%s┤\n" "$(hrule)"
@@ -158,8 +213,12 @@ row "  Faz İlerlemesi         : ${DONE_RUNS}/${TOTAL_RUNS} run  (%${DONE_PCT})"
 row "  Aktif Config           : ${AKTIF_CFG}"
 row "  Hız                    : ~${SPEED} run/dk"
 row "  ETA (bu faz)           : ${ETA_STR}"
-row "  Paralel Simülasyon     : ${PARALEL} adet"
-row "  CPU Kullanımı          : %${CPU}  (${CORES} çekirdek)"
+row "  Paralel Simülasyon     : ${PARALEL} adet  [ mod: ${AFF_MOD} ]"
+row "  CPU Toplam             : %${CPU}  |  Sıcaklık: ${TEMP}°C"
+printf "├%s┤\n" "$(hrule)"
+center_row "— Per-Core Kullanım —"
+make_core_rows
+printf "├%s┤\n" "$(hrule)"
 row "  Kampanya Bitişi        : ${CAMP_BITIS_STR}"
 row "  Tamamlanan Faz         : ${TAMAMLANAN_FAZ}/${TOTAL_FAZ}"
 printf "└%s┘\n" "$(hrule)"

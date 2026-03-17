@@ -11,11 +11,13 @@
 # =============================================================================
 
 NCPU=$(nproc)                               # 8 (i5-10300H)
-IDLE_THREADS=$(( NCPU - 1 ))               # 7  — sistem boştayken
+ALL_THREADS=$NCPU                          # 8  — gece tam boşta (core 0 dahil)
+IDLE_THREADS=$(( NCPU - 1 ))               # 7  — normal idle
 ACTIVE_THREADS=$(( NCPU * 40 / 100 ))      # 3  — kullanıcı aktifken (%40)
 [[ $ACTIVE_THREADS -lt 1 ]] && ACTIVE_THREADS=1
 COOL_THREADS=$(( ACTIVE_THREADS - 1 ))     # 2  — termal koruma
 [[ $COOL_THREADS -lt 1 ]] && COOL_THREADS=1
+AFFINITY_FILE="/tmp/lora_cpu_affinity"
 
 # ── CPU Sıcaklığı ─────────────────────────────────────────────────────────────
 get_temp() {
@@ -48,14 +50,32 @@ user_cpu_high() {
 
 # ── Kullanıcı girdi aktivitesi (≤5 dk) ───────────────────────────────────────
 user_active_input() {
-    if command -v xprintidle &>/dev/null; then
-        local idle_ms
-        idle_ms=$(DISPLAY=:0 xprintidle 2>/dev/null || echo 999999999)
-        [[ $(( idle_ms / 60000 )) -le 5 ]]
-        return $?
+    # Yöntem 1: loginctl ile oturum idle süresi
+    if command -v loginctl &>/dev/null; then
+        local session_id idle_hint
+        session_id=$(loginctl list-sessions --no-legend 2>/dev/null | awk 'NR==1{print $1}')
+        if [[ -n "$session_id" ]]; then
+            idle_hint=$(loginctl show-session "$session_id" -p IdleHint 2>/dev/null | cut -d= -f2)
+            local idle_since idle_ts now_ts
+            if [[ "$idle_hint" == "yes" ]]; then
+                idle_since=$(loginctl show-session "$session_id" -p IdleSinceHint 2>/dev/null \
+                    | cut -d= -f2)
+                if [[ -n "$idle_since" && "$idle_since" != "0" ]]; then
+                    idle_ts=$(( idle_since / 1000000 ))
+                    now_ts=$(date +%s)
+                    local idle_min=$(( (now_ts - idle_ts) / 60 ))
+                    [[ $idle_min -le 5 ]]
+                    return $?
+                fi
+                return 1  # idle=yes ama süre belli değil → idle say
+            fi
+            return 0  # IdleHint=no → aktif
+        fi
     fi
-    # Fallback: birisi oturum açıksa aktif say
-    [[ $(who | wc -l) -gt 0 ]]
+    # Fallback: son tty aktivitesi
+    local last_active
+    last_active=$(find /dev/pts /dev/tty* -maxdepth 0 -newer /proc/1/stat 2>/dev/null | wc -l)
+    [[ $last_active -gt 0 ]]
 }
 
 # ── Sistem yük ortalaması (yüksek yük eşiği) ─────────────────────────────────
@@ -72,26 +92,46 @@ decide() {
     local temp
     temp=$(get_temp)
 
-    # Termal koruma — 90°C eşiği
-    if [[ $temp -ge 90 ]]; then
+    local thermal_limit=90
+    [[ "${MAX_PERF:-0}" == "1" ]] && thermal_limit=97
+
+    # Termal koruma
+    if [[ $temp -ge $thermal_limit ]]; then
+        echo "1-7" > "$AFFINITY_FILE"
         echo "$COOL_THREADS"
+        return
+    fi
+
+    if [[ "${MAX_PERF:-0}" == "1" ]]; then
+        # Kullanıcı aktif değilse → gece modu: tüm 8 çekirdek (core 0 dahil)
+        if ! user_cpu_high && ! user_active_input && ! high_load; then
+            echo "0-7" > "$AFFINITY_FILE"
+            echo "$ALL_THREADS"   # 8
+            return
+        fi
+        # Kullanıcı aktif → core 0'ı serbest bırak
+        echo "1-7" > "$AFFINITY_FILE"
+        echo "$IDLE_THREADS"      # 7
         return
     fi
 
     # Kullanıcı aktif mi? (CPU >%15 VEYA girdi ≤5dk)
     if user_cpu_high || user_active_input; then
-        echo "$ACTIVE_THREADS"   # %40 çekirdek
+        echo "1-7" > "$AFFINITY_FILE"
+        echo "$ACTIVE_THREADS"    # 3
         return
     fi
 
     # Sistem yükü yüksek mi?
     if high_load; then
+        echo "1-7" > "$AFFINITY_FILE"
         echo "$ACTIVE_THREADS"
         return
     fi
 
-    # Tam hız — idle mod
-    echo "$IDLE_THREADS"         # N-1 çekirdek
+    # Normal idle
+    echo "1-7" > "$AFFINITY_FILE"
+    echo "$IDLE_THREADS"          # 7
 }
 
 decide

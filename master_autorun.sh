@@ -40,15 +40,13 @@ END_FAZ=7
 SINGLE_CONFIG=""
 CAMPAIGN_START_TIME=$(date +%s)
 
-# ── Tek instance kilidi (PID tabanlı) ────────────────────────────────────────
-if [ -f "$LOCKFILE" ]; then
-    old_pid=$(cat "$LOCKFILE" 2>/dev/null | tr -d '[:space:]')
-    if [ -n "$old_pid" ] && kill -0 "$old_pid" 2>/dev/null; then
-        echo "HATA: master_autorun.sh zaten çalışıyor (PID=$old_pid)." >&2
-        exit 1
-    fi
+# ── Tek instance kilidi (flock — atomik, race condition yok) ─────────────────
+exec 200>"$LOCKFILE"
+if ! flock -n 200; then
+    echo "HATA: master_autorun.sh zaten çalışıyor ($(cat "$LOCKFILE" 2>/dev/null))." >&2
+    exit 1
 fi
-echo $$ > "$LOCKFILE"
+echo $$ >&200
 trap 'kill -- -$$ 2>/dev/null; wait 2>/dev/null; rm -f "$LOCKFILE"' EXIT SIGTERM SIGINT
 
 # ── Argüman parse ─────────────────────────────────────────────────────────────
@@ -133,7 +131,8 @@ run_config() {
 
     local attempt max_attempts=3
     for (( attempt=1; attempt<=max_attempts; attempt++ )); do
-        if taskset -c 1-7 $BINARY -u Cmdenv -c "$cfg" -f "$INI" \
+        local _aff; _aff=$(cat /tmp/lora_cpu_affinity 2>/dev/null | tr -d '[:space:]'); [[ -z "$_aff" ]] && _aff="1-7"
+        if taskset -c "$_aff" $BINARY -u Cmdenv -c "$cfg" -f "$INI" \
              -n "$NED_PATH" \
              --output-scalar-file="${result_dir}/${cfg}-\${runnumber}.sca" \
              2>>"$log_file"; then
