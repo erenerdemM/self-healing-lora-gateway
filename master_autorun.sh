@@ -33,7 +33,7 @@ LOCKFILE="${PROJ_DIR}/.master_autorun.lock"
 declare -A FAZ_NAME=( [1]="Base_SF" [2]="Yasal_DC" [3]="Dogal_Engel"
                       [4]="Hava_Durumu" [5]="RF_Gurultu"
                       [6]="Internet_Gecikmesi" [7]="Self_Healing" )
-declare -A FAZ_RUNS=( [1]=36 [2]=108 [3]=324 [4]=972 [5]=2916 [6]=8748 [7]=8748 )
+declare -A FAZ_RUNS=( [1]=36 [2]=72 [3]=144 [4]=288 [5]=576 [6]=1152 [7]=1152 )
 
 START_FAZ=1
 END_FAZ=7
@@ -250,9 +250,9 @@ get_phase_configs() {
 log "================================================================"
 log " Arazi1 Master Autorun v3 — BAŞLADI"
 log " Fazlar: ${START_FAZ}–${END_FAZ}   Binary: $BINARY"
-log " TOPLAM KAMPANYA: 3.671.136 run"
+log " TOPLAM KAMPANYA: 574.560 run  (her faz x2 degisken)"
 log "================================================================"
-oplog "KAMPANYA BAŞLADI: Faz${START_FAZ}-${END_FAZ}"
+oplog "KAMPANYA BAŞLADI: Faz${START_FAZ}-${END_FAZ} (574.560 run, 2 degisken/faz)"
 
 # Tek config modu
 if [[ -n "$SINGLE_CONFIG" ]]; then

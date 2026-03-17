@@ -20,8 +20,8 @@
 
 import re, sys, os
 
-SRC_INI = "omnetpp.ini"
-DST_INI = "omnetpp_new.ini"
+SRC_INI = "omnetpp_eski_168cfg.ini.bak"
+DST_INI = "omnetpp.ini"
 
 # ── Faz parametre tablosu ────────────────────────────────────────────────────
 FAZ_TABLE = {
@@ -41,59 +41,58 @@ FAZ_TABLE = {
     },
     2: {
         "iso_label": "Yasal_DC",
-        "runs": 108,
+        "runs": 72,
         "iter_lines": [
-            "# DC siniri: %0.5 kisitli / %1 yasal BTK-ETSI / %5 gevşek test",
-            "**.sensorGW*[*].app[0].dutyCycleLimit = ${dc = 0.005, 0.01, 0.05}",
+            "# DC siniri: %0.5 kisitli / %1 yasal BTK-ETSI",
+            "**.sensorGW*[*].app[0].dutyCycleLimit = ${dc = 0.005, 0.01}",
         ],
         "fixed_lines": [],
     },
     3: {
         "iso_label": "Dogal_Engel",
-        "runs": 324,
+        "runs": 144,
         "iter_lines": [
-            "# Log-normal golge: 0dB acik / 5dB kent / 10dB yogun",
-            "**.radioMedium.pathLoss.sigma = ${sigmaE = 0.0, 5.0, 10.0}",
+            "# Log-normal golge: 2dB hafif engel / 5dB kent",
+            "**.radioMedium.pathLoss.sigma = ${sigmaE = 2.0, 5.0}",
             "**.sigma                      = ${sigmaE}",
         ],
         "fixed_lines": [],
     },
     4: {
         "iso_label": "Hava_Durumu",
-        "runs": 972,
+        "runs": 288,
         "iter_lines": [
-            "# Yol kaybi: gamma acik/yagmur/firtina + pl0 ek yagmur kaybi (paralel)",
-            "**.radioMedium.pathLoss.gamma    = ${wGamma = 2.75, 3.5, 4.5}",
-            "**.radioMedium.pathLoss.pl_d0_db = ${wPl0   = 31.54, 34.54, 38.54 ! wGamma}",
+            "# Yol kaybi: gamma acik/bulutlu + pl0 eslesik (paralel) [Quectel EG25-G arazi olcumleri]",
+            "**.radioMedium.pathLoss.gamma    = ${wGamma = 2.75, 3.20}",
+            "**.radioMedium.pathLoss.pl_d0_db = ${wPl0   = 31.54, 33.34 ! wGamma}",
         ],
         "fixed_lines": [],
     },
     5: {
         "iso_label": "RF_Gurultu",
-        "runs": 2916,
+        "runs": 576,
         "iter_lines": [
-            "# Gurultu tabani: standart / orta RF girisim / yuksek RF girisim",
-            "**.radioMedium.pathLoss.max_sensitivity_dBm = ${nFloor = -115.0, -108.0, -100.0}",
+            "# Gurultu tabani: -110dBm standart ISM / -105dBm yogun RF girisim",
+            "**.radioMedium.pathLoss.max_sensitivity_dBm = ${nFloor = -110.0, -105.0}",
         ],
         "fixed_lines": [],
     },
     6: {
         "iso_label": "Internet_Gecikmesi",
-        "runs": 8748,
+        "runs": 1152,
         "iter_lines": [
-            "# Ethernet RTT: ideal LAN / LTE Cat4 / LTE zayif (paralel gruptaki LTE degeri)",
-            "**.routingAgent.backhaulLatency    = ${ethLat = 0ms, 5ms, 20ms}",
-            "**.routingAgent.lteBackhaulLatency = ${lteLat = 50ms, 100ms, 200ms ! ethLat}",
+            "# Quectel EG25-G LTE/EDGE fallback: 50ms=LTE iyi / 500ms=EDGE düşüş",
+            "**.routingAgent.backhaulLatency = ${bkLat = 50ms, 500ms}",
         ],
         "fixed_lines": [],
     },
     7: {
         "iso_label": "Self_Healing",
-        "runs": 8748,
+        "runs": 1152,
         "iter_lines": [],
         "fixed_lines": [
-            "# Backhaul t=30s kesilir; GW mesh failover'a gecer",
-            "**.routingAgent.backhaulCutTime = 30s",
+            "# Backhaul t=600s kesilir; sensor 180s periyotlu → 3 tam paket sonrasi GW failover",
+            "**.routingAgent.backhaulCutTime = 600s",
             "**.routingAgent.lteBackhaulUp   = false",
         ],
     },
