@@ -12,7 +12,10 @@ set -euo pipefail
 # ── Yollar ────────────────────────────────────────────────────────────────────
 PROJ_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OMNET_SETENV="/home/eren/Desktop/bitirme_lora_kod/omnetpp-6.0-linux-x86_64/omnetpp-6.0/setenv"
+FLORA_DIR="/home/eren/Desktop/bitirme_lora_kod/workspace/flora"
+INET_DIR="/home/eren/Desktop/bitirme_lora_kod/workspace/inet4.4"
 BINARY="./lora_mesh_projesi_dbg"
+NED_PATH=".:${FLORA_DIR}/src:${INET_DIR}/src"
 INI="omnetpp.ini"
 RESOURCE_ENGINE="./resource_engine.sh"
 MASTER_LOG="${PROJ_DIR}/master_autorun.log"
@@ -43,6 +46,8 @@ done
 cd "$PROJ_DIR"
 # shellcheck disable=SC1090
 source "$OMNET_SETENV" -f 2>/dev/null || true
+# FLoRa + INET kütüphaneleri LD_LIBRARY_PATH'e ekle
+export LD_LIBRARY_PATH="${FLORA_DIR}/src:${INET_DIR}/src${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 
 log() {
     echo "[$(date '+%F %T')] $*" | tee -a "$MASTER_LOG"
@@ -76,6 +81,7 @@ run_config() {
 
     # OMNeT++ çalıştır — stderr log'u ayrı tut
     if $BINARY -u Cmdenv -c "$cfg" -f "$INI" \
+         -n "$NED_PATH" \
          --output-scalar-file="${result_dir}/${cfg}-\${runnumber}.sca" \
          2>>"$log_file"; then
         local elapsed=$(( $(date +%s) - t0 ))
