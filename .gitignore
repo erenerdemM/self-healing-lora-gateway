@@ -1,117 +1,27 @@
-# =============================================================================
-# .gitignore — Self-Healing Hybrid LoRa Gateway (OMNeT++ / INET / FLoRa)
-# Eren ERDEM (2020502028) — Melisa KURAL (2021502041) — DEÜ EEE
-# =============================================================================
-
-# -----------------------------------------------------------------------------
-# OMNeT++ Derleme Çıktıları
-# -----------------------------------------------------------------------------
-out/
-*.o
-*.a
-*.so
-*.so.*
-*.dll
-*.dylib
-
-# Proje binary'leri (debug/release)
-lora_mesh_projesi_dbg
-lora_mesh_projesi
-lora_mesh_projesi_release
-*_dbg
-*_release
-
-# Makefile otomatik türetilen
-Makefile.inc
-
-# -----------------------------------------------------------------------------
-# OMNeT++ Simülasyon Sonuçları
-# -----------------------------------------------------------------------------
-results/
+# ── Simülasyon çıktıları (büyük) ─────────────────────────────────────
+results_faz*/
+logs_faz*/
 *.sca
 *.vec
-*.vci
-*.log
-*.elog
+*.stp
 
-# Ham veri arşivleri — büyük binary, Git LFS olmadan push edilmemeli
-*.tar
+# ── Arşivler ──────────────────────────────────────────────────────────
 *.tar.gz
-*.tar.bz2
+*.zip
 
-# Cmdenv log
-.cmdenv-log
+# ── OMNeT++ derleme çıktıları ─────────────────────────────────────────
+out/
+*.o
+lora_mesh_projesi_dbg
+lora_mesh_projesi
 
-# Qtenv GUI ayarları (kullanıcıya özel)
-.qtenvrc
+# ── Eski yedek ini ────────────────────────────────────────────────────
+omnetpp_eski_*.ini.bak
 
-# -----------------------------------------------------------------------------
-# OMNeT++ IDE (Eclipse CDT) — proje dosyaları
-# Bu dosyalar IDE'ye özel olduğundan isteğe bağlı track edilebilir.
-# Simülasyonun çalışması için GEREKLİ DEĞİL.
-# -----------------------------------------------------------------------------
-# .project         ← track ediyoruz (proje adı bilgisi)
-# .cproject        ← track ediyoruz (derleme konfigürasyonu)
-# .oppbuildspec    ← track ediyoruz (opp_makemake parametreleri)
-.settings/
-
-# -----------------------------------------------------------------------------
-# VS Code
-# -----------------------------------------------------------------------------
-.vscode/
-*.code-workspace
-
-# -----------------------------------------------------------------------------
-# PDF / Büyük dosyalar (Git LFS olmadan push edilmemeli)
-# Bitirme projesi PDF raporunu ayrı tutuyoruz (gizlilik + boyut)
-# -----------------------------------------------------------------------------
-*.pdf
-
-# -----------------------------------------------------------------------------
-# Python / Venv (analiz scriptleri için)
-# -----------------------------------------------------------------------------
-__pycache__/
-*.py[cod]
-*.pyo
-venv/
-.venv/
-env/
-
-# -----------------------------------------------------------------------------
-# C++ derleme artıkları
-# -----------------------------------------------------------------------------
-*.d
-*.ii
-*.s
-
-# -----------------------------------------------------------------------------
-# Geçici / yedek dosyalar
-# -----------------------------------------------------------------------------
-*.bak
-*.tmp
-*.swp
-*.swo
-*~
-\#*\#
-.#*
-
-# Otomatik üretilen topoloji NED dosyaları (generate_massive_topology.py çıktısı)
-LoraMesh_GW*_Mesh*_*.ned
-
-# Simülasyon log dizinleri
-logs_massive/
-logs_massive_faz2/
-logs_massive_faz2_v2/
-logs_massive_faz3/
-logs_faz123/
-logs_full144/
-
-# mega_organize_run.log geçici çıktı
-mega_organize_run.log
-
-# -----------------------------------------------------------------------------
-# OS dosyaları
-# -----------------------------------------------------------------------------
-.DS_Store
-Thumbs.db
-desktop.ini
+# ── Çalışma zamanı geçici dosyalar ────────────────────────────────────
+*.log
+*.log.bak
+.campaign_checkpoint
+Auto_Fix_Report.txt
+telemetri.log
+master_autorun.log

@@ -1,0 +1,59 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "OMNeT++: Build (debug)",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "-lc",
+        "source /home/eren/Desktop/bitirme_lora_kod/omnetpp-6.0-linux-x86_64/omnetpp-6.0/setenv && cd /home/eren/Desktop/bitirme_lora_kod/lora_mesh_projesi && make MODE=debug -j"
+      ],
+      "problemMatcher": ["$gcc"],
+      "group": "build"
+    },
+    {
+      "label": "OMNeT++: Build (release)",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "-lc",
+        "source /home/eren/Desktop/bitirme_lora_kod/omnetpp-6.0-linux-x86_64/omnetpp-6.0/setenv && cd /home/eren/Desktop/bitirme_lora_kod/lora_mesh_projesi && make MODE=release -j"
+      ],
+      "problemMatcher": ["$gcc"],
+      "group": "build"
+    },
+    {
+      "label": "OMNeT++: Clean",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "-lc",
+        "source /home/eren/Desktop/bitirme_lora_kod/omnetpp-6.0-linux-x86_64/omnetpp-6.0/setenv && cd /home/eren/Desktop/bitirme_lora_kod/lora_mesh_projesi && make clean"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "OMNeT++: Run (Cmdenv, debug exe)",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "-lc",
+        "source /home/eren/Desktop/bitirme_lora_kod/omnetpp-6.0-linux-x86_64/omnetpp-6.0/setenv && cd /home/eren/Desktop/bitirme_lora_kod/lora_mesh_projesi && ./lora_mesh_projesi_dbg -u Cmdenv -f omnetpp.ini -n .:../workspace/inet4.4/src:../workspace/flora/src"
+      ],
+      "dependsOn": "OMNeT++: Build (debug)",
+      "problemMatcher": []
+    },
+    {
+      "label": "OMNeT++: Run (Qtenv, debug exe)",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "-lc",
+        "source /home/eren/Desktop/bitirme_lora_kod/omnetpp-6.0-linux-x86_64/omnetpp-6.0/setenv && cd /home/eren/Desktop/bitirme_lora_kod/lora_mesh_projesi && ./lora_mesh_projesi_dbg -u Qtenv -f omnetpp.ini -n .:../workspace/inet4.4/src:../workspace/flora/src"
+      ],
+      "dependsOn": "OMNeT++: Build (debug)",
+      "problemMatcher": []
+    }
+  ]
+}

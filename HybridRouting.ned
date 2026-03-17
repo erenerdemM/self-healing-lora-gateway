@@ -82,9 +82,16 @@ simple HybridRouting
         // omnetpp.ini: **.hybridGW1.routingAgent.backhaulCutTime = 200s
         double backhaulCutTime @unit(s) = default(-1s);
 
-        // Backhaul RTT gecikme eki (ms): 0=yok, 20=LTE, 200=DSL, 1000=uydu
-        // omnetpp.ini: **.routingAgent.backhaulLatency = 200ms
+        // ── Birincil Backhaul: Ethernet GbE (CM4 built-in) ───────────────
+        // Ethernet RTT gecikme eki (ms): 0=ideal LAN, 1-5=gerçekçi
         double backhaulLatency @unit(ms) = default(0ms);
+
+        // ── İkincil Backhaul: Quectel EG25-G (LTE Cat4, Mini PCIe) ──────
+        // Ethernet düşünce otomatik devreye girer (aktif yedeklilik)
+        // omnetpp.ini: **.routingAgent.lteBackhaulUp = false → LTE de kopuk testi
+        bool lteBackhaulUp = default(true);
+        // LTE Cat4 RTT gecikme (ms): 30=iyi sinyal, 80=orta, 200=zayıf sinyal
+        double lteBackhaulLatency @unit(ms) = default(50ms);
 
         // ── İşlemci Gecikmesi (STM32 PCB gerçekliği) ─────────────────────
         // SX1303 SPI paketi okuma → DMA kopyalama → CPU ISR → routing kararı
@@ -131,16 +138,17 @@ simple HybridRouting
         // @directIn: packetForwarder bağlıyken MeshNode sendDirect() de alabilir
         input  routeRequestIn @directIn;
         // Seçilen next-hop bilgisi üst katmana
-        output routeDecisionOut;
+        // @allowUnconnected: HybridGateway V1'de bağlı değil; kod isConnected() ile kontrol eder
+        output routeDecisionOut @allowUnconnected;
 
-        // Komşu beacon / RSSI bildirimleri (MAC katmanından)
-        input  neighborUpdateIn;
+        // Komşu beacon / RSSI bildirimleri — sendDirect() hedefi (HybridRouting.cc + MeshRouting.cc)
+        input  neighborUpdateIn @directIn;
 
         // Mesh Röle Final Teslimat (sendDirect hedefi — NED'de bağlanmaz)
-        // MeshRouting.cc, GW hedefli paketleri buraya sendDirect() ile iletir.
-        // routeRequestIn'den farklı olarak bu kapı HybridGateway.ned içinde
-        // hiçbir şeye bağlanmaz → OMNeT++ 6 sendDirect koşulu sağlanır.
-        input  meshDeliveryIn @allowUnconnected;
+        // MeshRouting.cc enterActiveTx() bu gate'e sendDirect() ile iletir.
+        // @directIn: sendDirect hedefi olduğunu NED checker'a bildirir
+        // @allowUnconnected: HybridGateway.ned içinde bağlı değil (tasarım gereği)
+        input  meshDeliveryIn @directIn @allowUnconnected;
 
         // NS Yönlendirme Çıkışı — HybridGateway.ned'de packetForwarder.meshRelayIn'e bağlanır.
         // meshDeliveryIn'den gelen pakete LoRaMacFrame eklendikten sonra bu kapıdan gider.

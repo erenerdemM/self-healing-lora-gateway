@@ -78,8 +78,14 @@ void HybridRouting::initialize(int stage)
         beaconRssi_       = par("beaconRssi");
         maxQueueSize_     = par("maxQueueSize");
         sensorPacketRate_ = par("sensorPacketRate");
-        backhaulCutTime_s_   = par("backhaulCutTime");
-        backhaulLatency_ms_  = par("backhaulLatency");
+        backhaulCutTime_s_      = par("backhaulCutTime");
+        backhaulLatency_ms_     = par("backhaulLatency");
+        // ── İkincil Backhaul: Quectel EG25-G (LTE Cat4) ─────────────────────
+        isLteBackhaulUp_        = par("lteBackhaulUp");
+        lteBackhaulLatency_ms_  = par("lteBackhaulLatency");
+        EV_INFO << "[HybridRouting] LTE Backhaul (Quectel EG25-G): "
+                << (isLteBackhaulUp_ ? "UP" : "DOWN")
+                << "  RTT=" << lteBackhaulLatency_ms_ << "ms\n";
         currentQueueOcc_  = 0.05 + uniform(0.0, 0.08);  // rastgele başlangıç
         failoverLogCounter_ = 0;
 
@@ -102,7 +108,9 @@ void HybridRouting::initialize(int stage)
         isBackhaulUp_ = par("backhaulUp");
         // backhaulRuntimeUp başlangıç değerini senkronize et (PacketForwarder okur)
         par("backhaulRuntimeUp").setBoolValue(isBackhaulUp_);
-        EV_INFO << "[HybridRouting] backhaulUp=" << (isBackhaulUp_ ? "true (ONLINE)" : "false (FAILOVER)") << "\n";
+        EV_INFO << "[HybridRouting] Ethernet backhaul: "
+                << (isBackhaulUp_ ? "UP" : "DOWN")
+                << "  RTT=" << backhaulLatency_ms_ << "ms\n";
 
         // ── Güç durum makinesi başlangıcı ─────────────────────────────────────
         currentPowerState_ = PowerState::DEEP_SLEEP;
@@ -418,20 +426,29 @@ void HybridRouting::processRouteRequest(cMessage *msg)
     purgeStaleNeighbors();
 
     if (checkBackhaulAlive()) {
-        EV_WARN << "[HybridRouting] ◆ SENARYO A — İNTERNET VAR ◆\n"
+        EV_WARN << "[HybridRouting] ◆ SENARYO A — BACKHAUL AKTİF ◆\n"
                 << "  t=" << simTime() << "s  addr=" << par("meshAddress").stringValue() << "\n"
-                << "  Sensör verisi doğrudan NetworkServer'a iletiliyor.\n"
-                << "  MESH'E SENSÖR VERİSİ GÖNDERİLMİYOR — Sadece beacon yayınlanır.\n";
+                << "  Aktif hat: " << (isBackhaulUp_ ? "Ethernet GbE" : "LTE Cat4 (Quectel EG25-G)") << "\n"
+                << "  Sensör verisi NetworkServer'a iletiliyor.\n";
 
-        if (backhaulLatency_ms_ > 0.0) {
-            // Backhaul RTT modeli: kararı backhaulLatency_ms_ sonra ver
-            EV_INFO << "[HybridRouting] backhaulLatency eki: "
-                    << backhaulLatency_ms_ << "ms — karar geciktiriliyor.\n";
+        // Aktif backhaul gecikmesini belirle:
+        //   Ethernet UP  → backhaulLatency_ms_  (tipik ~0-5 ms)
+        //   Sadece LTE UP → lteBackhaulLatency_ms_ (tipik ~30-80 ms)
+        const double activeLatency = activeBackhaulLatency_ms();
+        const char*  activeName    = isBackhaulUp_ ? "Ethernet GbE" : "LTE Cat4 (Quectel EG25-G)";
+        EV_INFO << "[HybridRouting] Aktif backhaul: " << activeName
+                << "  RTT=" << activeLatency << "ms\n";
+
+        if (activeLatency > 0.0) {
+            // Backhaul RTT modeli: kararı aktif gecikme kadar sonra ver
+            EV_INFO << "[HybridRouting] Backhaul RTT eki: "
+                    << activeLatency << "ms — karar geciktiriliyor.\n";
             if (pendingLatencyMsg_) { delete pendingLatencyMsg_; }
             pendingLatencyMsg_ = msg;
             if (!backhaulLatencyTimer_)
                 backhaulLatencyTimer_ = new cMessage("backhaulLatencyTimer");
-            scheduleAt(simTime() + backhaulLatency_ms_ / 1000.0, backhaulLatencyTimer_);
+            cancelEvent(backhaulLatencyTimer_);  // timer zaten lı olabilir — önce iptal
+            scheduleAt(simTime() + activeLatency / 1000.0, backhaulLatencyTimer_);
         } else {
             cMessage *decision = new cMessage("routeDecision_direct");
             decision->setKind(0);
@@ -444,10 +461,10 @@ void HybridRouting::processRouteRequest(cMessage *msg)
             delete msg;
         }
     } else {
-        EV_WARN << "[HybridRouting] ◆ SENARYO B — İNTERNET KESİNTİSİ ◆\n"
+        EV_WARN << "[HybridRouting] ◆ SENARYO B — TÜM BACKHAUL KOPUK ◆\n"
                 << "  t=" << simTime() << "s  addr=" << par("meshAddress").stringValue() << "\n"
-                << "  Sensör verisi MESH ağına aktarılıyor!\n"
-                << "  En düşük C_i'ye sahip ONLINE-GW hedef seçiliyor...\n";
+                << "  Ethernet DOWN + LTE DOWN — FAILOVER modu aktif!\n"
+                << "  Mesh ağı üzerinden en düşük C_i'ye sahip ONLINE-GW seçiliyor...\n";
         forwardToMesh(msg);
     }
 }
@@ -497,6 +514,10 @@ void HybridRouting::checkBackhaulStatus()
     if (isBackhaulUp_) {
         currentQueueOcc_ = 0.985 * currentQueueOcc_
                          + 0.0005 * sensorPacketRate_;
+    } else if (isLteBackhaulUp_) {
+        // LTE aktif: Ethernet'ten yavaş ama kuyruk boşaltılıyor
+        currentQueueOcc_ = 0.990 * currentQueueOcc_
+                         + 0.0008 * sensorPacketRate_;
     } else {
         const double incoming = 0.0003 * sensorPacketRate_;
         const double projected = currentQueueOcc_ + incoming;
@@ -574,7 +595,8 @@ void HybridRouting::checkBackhaulStatus()
 // -----------------------------------------------------------------------------
 bool HybridRouting::checkBackhaulAlive() const
 {
-    return isBackhaulUp_;
+    // Ethernet (birincil) VEYA LTE (ikincil) aktifse backhaul sağlıklı
+    return isBackhaulUp_ || isLteBackhaulUp_;
 }
 
 // =============================================================================
@@ -1039,16 +1061,20 @@ void HybridRouting::broadcastBeaconToMeshNeighbors()
 
     // ─── SENARYO DURUM LOGU (her beacon döngüsünde, yani her 10s) ───────────
     if (isBackhaulUp_) {
-        EV_WARN << "[HybridRouting] ◆ SENARYO A — İNTERNET VAR ◆\n"
+        EV_WARN << "[HybridRouting] ◆ SENARYO A — ETHERNET AKTİF ◆\n"
                 << "  t=" << simTime() << "s  addr=" << myAddr
-                << "  queue=" << queueOcc * 100.0 << "%\n"
-                << "  Sensör verisi NetworkServer'a DOĞRUDAN iletiliyor.\n"
-                << "  MESH'E SENSÖR VERİSİ GÖNDERİLMİYOR — Sadece durum beacon'ı yayınlanır.\n";
+                << "  RTT=" << backhaulLatency_ms_ << "ms  queue=" << queueOcc * 100.0 << "%\n"
+                << "  Ethernet GbE (CM4 built-in) üzerinden NetworkServer'a iletiliyor.\n";
+    } else if (isLteBackhaulUp_) {
+        EV_WARN << "[HybridRouting] ◆ SENARYO A (LTE YEDEK) — Quectel EG25-G AKTİF ◆\n"
+                << "  t=" << simTime() << "s  addr=" << myAddr
+                << "  LTE RTT=" << lteBackhaulLatency_ms_ << "ms  queue=" << queueOcc * 100.0 << "%\n"
+                << "  Ethernet DOWN — LTE Cat4 (EG25-G) üzerinden NetworkServer'a iletiliyor.\n";
     } else {
-        EV_WARN << "[HybridRouting] ◆ SENARYO B — İNTERNET KESİNTİSİ ◆\n"
+        EV_WARN << "[HybridRouting] ◆ SENARYO B — ETHERNET + LTE KOPUK ◆\n"
                 << "  t=" << simTime() << "s  addr=" << myAddr
                 << "  queue=" << queueOcc * 100.0 << "%\n"
-                << "  Internet DOWN — FAILOVER modu aktif.\n"
+                << "  Tüm backhaul DOWN — FAILOVER modu aktif!\n"
                 << "  Mesh ağı üzerinden en düşük C_i'li GW'ye yönlendirme devrede!\n";
     }
 

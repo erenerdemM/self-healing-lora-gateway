@@ -1,0 +1,35 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "OMNeT++: Debug (lora_mesh_projesi_dbg)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "/home/eren/Desktop/bitirme_lora_kod/lora_mesh_projesi/lora_mesh_projesi_dbg",
+      "args": [
+        "-u",
+        "Cmdenv",
+        "-f",
+        "omnetpp.ini",
+        "-n",
+        ".:../workspace/inet4.4/src:../workspace/flora/src"
+      ],
+      "cwd": "/home/eren/Desktop/bitirme_lora_kod/lora_mesh_projesi",
+      "environment": [
+        {
+          "name": "OMNETPP_ROOT",
+          "value": "/home/eren/Desktop/bitirme_lora_kod/omnetpp-6.0-linux-x86_64/omnetpp-6.0"
+        },
+        {
+          "name": "PATH",
+          "value": "/home/eren/Desktop/bitirme_lora_kod/omnetpp-6.0-linux-x86_64/omnetpp-6.0/bin:${env:PATH}"
+        }
+      ],
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb",
+      "preLaunchTask": "OMNeT++: Build (debug)",
+      "stopAtEntry": false,
+      "externalConsole": false
+    }
+  ]
+}

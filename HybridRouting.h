@@ -137,8 +137,14 @@ class HybridRouting : public cSimpleModule
     double beaconRssi_;          // Simüle edilmiş mesh RSSI (dBm)
     double sensorPacketRate_;    // Sensör paket varış hızı (pkt/s)
     int    maxQueueSize_;        // Kuyruk kapasitesi (pkt)
-    double backhaulCutTime_s_;   // Bu zamanda backhaul kesilir (< 0 = yok)
-    double backhaulLatency_ms_;  // Backhaul round-trip gecikme eki (ms, 0=yok)
+    double backhaulCutTime_s_;   // Bu zamanda Ethernet backhaul kesilir (< 0 = yok)
+    double backhaulLatency_ms_;  // Ethernet RTT gecikme eki (ms, 0=yok)
+
+    // ── İkincil Backhaul: Quectel EG25-G (LTE Cat4, Mini PCIe) ──────────────
+    // Ethernet düşünce otomatik devreye girer (aktif yedeklilik)
+    // backhaulLatency_ms_ sıfırken LTE gecikmesi devreye girer (~30-80 ms)
+    bool   isLteBackhaulUp_ = true;  // initialize()'da par() ile ezilir
+    double lteBackhaulLatency_ms_;   // LTE Cat4 RTT gecikme (ms)
 
     // Dinamik kuyruk doluluk oranı [0..1] — her backhaulTimer'da güncellenir
     double currentQueueOcc_;
@@ -160,10 +166,21 @@ class HybridRouting : public cSimpleModule
     // Başlangıç değeri initialize()'da par("backhaulUp") ile okunur.
     // omnetpp.ini'den: **.routingAgent.backhaulUp = false  (bölümsel failover)
     // Simülasyon içi event: setBackhaulUp(false) — örn. t=200s'de
-    bool isBackhaulUp_ = true;  // initialize()'da par() ile ezilir
+    bool isBackhaulUp_ = true;  // Ethernet GbE durumu — par() ile ezilir
 
     /** omnetpp.ini veya harici C++ event'inden çağrılabilir */
-    void setBackhaulUp(bool up) { isBackhaulUp_ = up; }
+    void setBackhaulUp(bool up)    { isBackhaulUp_     = up; }
+    void setLteBackhaulUp(bool up) { isLteBackhaulUp_  = up; }
+
+    /** Aktif backhaul gecikmesini ms cinsinden döndür.
+     *  Ethernet UP → backhaulLatency_ms_
+     *  Sadece LTE UP → lteBackhaulLatency_ms_
+     *  Her ikisi de DOWN → 0 (mesh failover, gecikme anlamsız) */
+    double activeBackhaulLatency_ms() const {
+        if (isBackhaulUp_)    return backhaulLatency_ms_;
+        if (isLteBackhaulUp_) return lteBackhaulLatency_ms_;
+        return 0.0;
+    }
 
     // Paket sıra numarası sayacı (her encapsulation'da artar)
     int seqCounter_ = 0;
