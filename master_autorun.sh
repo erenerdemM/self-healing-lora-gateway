@@ -108,8 +108,8 @@ run_config() {
     local t0
     t0=$(date +%s)
 
-    # OMNeT++ çalıştır — stderr log'u ayrı tut
-    if $BINARY -u Cmdenv -c "$cfg" -f "$INI" \
+    # OMNeT++ çalıştır — taskset ile core 1-7'ye pin et, core 0 sistem için boş
+    if taskset -c 1-7 $BINARY -u Cmdenv -c "$cfg" -f "$INI" \
          -n "$NED_PATH" \
          --output-scalar-file="${result_dir}/${cfg}-\${runnumber}.sca" \
          2>>"$log_file"; then

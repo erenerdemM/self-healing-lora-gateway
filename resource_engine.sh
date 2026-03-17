@@ -5,16 +5,18 @@
 # Çıktı: önerilen paralel thread sayısı (1 rakam)
 #
 # Karar tablosu:
-#   CPU sıcaklığı ≥ 90°C          → 2   (soğuma modu)
-#   Kullanıcı aktif (≤5dk)         → 3   (arka planda dost)
-#   Yük ortalaması yüksek (>6.0)   → 3   (sistem meşgul)
-#   Normal / boşta               → 7   (tam hız, N-1)
+#   CPU sıcaklığı ≥ 90°C          → 4   (soğuma modu)
+#   Her koşulda                   → 7   (core 0 sistem, core 1-7 sim)
 # =============================================================================
+# Politika: core 0 her zaman sistem+kullanıcıya ayrılmış (taskset ile).
+# Bu script yalnızca kaç paralel proses başlatılacağını söyler.
 
 NCPU=$(nproc)                       # 8 çekirdek
-MAX_THREADS=$(( NCPU - 1 ))        # 7
-LOW_THREADS=3
-COOL_THREADS=2
+SIM_THREADS=7                      # core 1-7 → 7 paralel sim
+COOL_THREADS=5                     # 95°C+ → 5'e düş (throttle koruma)
+# Eski değişkenler (kullanılmıyor ama uyumluluk için bırakıldı)
+MAX_THREADS=$SIM_THREADS
+LOW_THREADS=$SIM_THREADS
 
 # ── CPU Sıcaklığı ────────────────────────────────────────────────────────────
 get_temp() {
@@ -72,22 +74,14 @@ decide() {
     local temp
     temp=$(get_temp)
 
-    if [[ $temp -ge 90 ]]; then
-        echo "$COOL_THREADS"   # aşırı ısınma
+    if [[ $temp -ge 95 ]]; then
+        echo "$COOL_THREADS"   # aşırı ısınma → 5'e düş
         return
     fi
 
-    if user_active; then
-        echo "$LOW_THREADS"    # kullanıcı aktif
-        return
-    fi
-
-    if high_load; then
-        echo "$LOW_THREADS"    # yük yüksek
-        return
-    fi
-
-    echo "$MAX_THREADS"        # tam hız
+    # Kullanıcı aktif/boşta fark etmez: core 0 zaten sistem için sabit ayrıldı.
+    # Her zaman 7 paralel sim çalıştır.
+    echo "$SIM_THREADS"
 }
 
 # Sadece çağrılırsa karar ver, kaynağa dahil edilirse sessiz kal
