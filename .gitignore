@@ -1,27 +1,13 @@
-# ── Simülasyon çıktıları (büyük) ─────────────────────────────────────
 results_faz*/
 logs_faz*/
 *.sca
 *.vec
 *.stp
-
-# ── Arşivler ──────────────────────────────────────────────────────────
 *.tar.gz
-*.zip
-
-# ── OMNeT++ derleme çıktıları ─────────────────────────────────────────
-out/
-*.o
-lora_mesh_projesi_dbg
-lora_mesh_projesi
-
-# ── Eski yedek ini ────────────────────────────────────────────────────
-omnetpp_eski_*.ini.bak
-
-# ── Çalışma zamanı geçici dosyalar ────────────────────────────────────
 *.log
-*.log.bak
 .campaign_checkpoint
 Auto_Fix_Report.txt
-telemetri.log
-master_autorun.log
+omnetpp_new.ini
+graphs/
+.config_locks/
+.dispatch_faz*/
