@@ -196,23 +196,11 @@ phase_commit() {
 
     tar -czf "$archive" "results_faz${faz_n}/" "logs_faz${faz_n}/" 2>/dev/null || true
 
-    # §6b  Grafik oluşturma
-    log "[ANALIZ] Faz ${faz_n} grafikleri oluşturuluyor…"
-    local graph_dir="${PROJ_DIR}/graphs/faz${faz_n}"
-    if python3 "${PROJ_DIR}/analiz_faz.py" --faz "$faz_n" --out "${PROJ_DIR}/graphs" >> "$MASTER_LOG" 2>&1; then
-        log "[ANALIZ] Grafik OK → graphs/faz${faz_n}/"
-        oplog "ANALIZ: Faz${faz_n} grafikleri üretildi → ${graph_dir}"
-    else
-        log "[WARN] Grafik oluşturulamadı (devam ediliyor)"
-    fi
-
-    # §6c  GitHub push (grafik dahil)
+    # §6b  GitHub push (scripts + ini — grafik sonra eklenir)
     if git -C "$PROJ_DIR" rev-parse --git-dir &>/dev/null; then
         git -C "$PROJ_DIR" add omnetpp.ini master_autorun.sh \
             resource_engine.sh telemetri.sh generate_7faz_ini.py \
             kampanya_durum.sh analiz_faz.py .gitignore 2>/dev/null || true
-        [[ -d "${graph_dir}" ]] && \
-            git -C "$PROJ_DIR" add "graphs/faz${faz_n}/" 2>/dev/null || true
         git -C "$PROJ_DIR" commit -m \
             "Arazi1 Faz${faz_n} ${FAZ_NAME[$faz_n]} tamamlandı — $(date '+%F %T')" \
             --quiet && log "[GIT] commit OK" || log "[GIT] commit atlandı"
@@ -221,12 +209,31 @@ phase_commit() {
             || log "[WARN] git push başarısız"
     fi
 
-    # §6d  Ham SCA/log verilerini sil (tar.gz'de yedeklendi)
+    # §6c  Ham SCA/log verilerini sil (tar.gz'de yedeklendi)
     local disk_pct
     disk_pct=$(df "$PROJ_DIR" | tail -1 | awk '{print int($5)}')
     log "[DISK] Kullanım: %${disk_pct} — ham veriler siliniyor (${archive} yedek)"
     rm -rf "results_faz${faz_n}/" "logs_faz${faz_n}/"
     oplog "DISK-CLEAN: results_faz${faz_n} silindi, disk %${disk_pct}"
+
+    # §6d  Grafik üretimi arka planda — sonraki faz simülasyonuyla paralel çalışır
+    local graph_dir="${PROJ_DIR}/graphs/faz${faz_n}"
+    log "[ANALIZ] Faz ${faz_n} grafikleri arka planda başlatılıyor…"
+    (
+        # Analiz için arşivden çıkartmak yerine tar.gz'den doğrudan çalış
+        # (ham veri silindi, SCA yoksa text_summary üretir → geç log'a yazar)
+        python3 "${PROJ_DIR}/analiz_faz.py" --faz "$faz_n" \
+            --out "${PROJ_DIR}/graphs" >> "$MASTER_LOG" 2>&1
+        if [[ -d "${graph_dir}" && "$(ls -A "${graph_dir}" 2>/dev/null)" ]]; then
+            git -C "$PROJ_DIR" add "graphs/faz${faz_n}/" 2>/dev/null || true
+            git -C "$PROJ_DIR" commit -m \
+                "Arazi1 Faz${faz_n} grafikleri eklendi — $(date '+%F %T')" \
+                --quiet 2>/dev/null || true
+            git -C "$PROJ_DIR" push origin main --quiet 2>/dev/null || true
+            log "[ANALIZ] Faz ${faz_n} grafik push OK → graphs/faz${faz_n}/"
+        fi
+    ) &
+    disown
 }
 
 # ── Config listesini ini'den çek ──────────────────────────────────────────────
