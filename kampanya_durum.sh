@@ -119,12 +119,12 @@ else
     }' /proc/stat | sed 's/  *$//')
 fi
 
-# Affinity modu (gece/gündüz)
-AFF=$(cat /tmp/lora_cpu_affinity 2>/dev/null || echo "1-7")
+# Affinity modu
+AFF=$(cat /tmp/lora_cpu_affinity 2>/dev/null || echo "0-7")
 if [[ "$AFF" == "0-7" ]]; then
-    AFF_MOD="GECE (8 core)"
+    AFF_MOD="8 CORE TAM HIZ"
 else
-    AFF_MOD="GÜNDÜZ (7 core)"
+    AFF_MOD="2 CORE (TERMAL KORUMA)"
 fi
 
 # Sıcaklık

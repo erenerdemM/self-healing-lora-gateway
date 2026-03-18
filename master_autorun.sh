@@ -156,49 +156,32 @@ run_config() {
     exec 201>&-
 }
 
-# ── Paralel havuz ─────────────────────────────────────────────────────────────
+# ── Paralel havuz (wait -n tabanlı — kesin N-thread limiti) ──────────────────
 run_parallel() {
     local faz_n="$1"; shift
     local cfgs=("$@")
     local total="${FAZ_RUNS[$faz_n]}"
-    local dispatch_dir="${PROJ_DIR}/.dispatch_faz${faz_n}"
-    rm -rf "$dispatch_dir"; mkdir -p "$dispatch_dir"
 
-    local threads=3
-    threads=$(bash "$RESOURCE_ENGINE" 2>/dev/null || echo 3)
+    local threads
+    threads=$(bash "$RESOURCE_ENGINE" 2>/dev/null || echo 8)
     log "[FAZ $faz_n] ${#cfgs[@]} config, ${total} run/config, ${threads} thread"
 
     local active=0
-    local pids=()
 
     for cfg in "${cfgs[@]}"; do
-        # Atomik dispatch bayrağı
-        if ! ( set -o noclobber; : > "$dispatch_dir/${cfg}" ) 2>/dev/null; then
-            continue
-        fi
-
-        # Boş slot bekle
-        while [[ $active -ge $threads ]]; do
-            sleep 1
-            local new_pids=()
-            for (( k=0; k<${#pids[@]}; k++ )); do
-                if kill -0 "${pids[$k]}" 2>/dev/null; then
-                    new_pids+=("${pids[$k]}")
-                else
-                    (( active-- ))
-                fi
-            done
-            pids=("${new_pids[@]+"${new_pids[@]}"}")
-            threads=$(bash "$RESOURCE_ENGINE" 2>/dev/null || echo 3)
+        # Slot dolu → bir iş bitene kadar bekle, thread sayısını güncelle
+        while (( active >= threads )); do
+            wait -n 2>/dev/null
+            (( active-- ))
+            threads=$(bash "$RESOURCE_ENGINE" 2>/dev/null || echo 8)
         done
 
         run_config "$faz_n" "$cfg" "$total" &
-        pids+=($!)
         (( active++ ))
     done
 
+    # Kalanları bekle
     wait
-    rm -rf "$dispatch_dir"
     log "[FAZ $faz_n] Tüm config'ler tamamlandı."
 }
 
