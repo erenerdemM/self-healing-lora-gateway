@@ -185,18 +185,34 @@ run_parallel() {
     log "[FAZ $faz_n] Tüm config'ler tamamlandı."
 }
 
-# ── Faz sonu: tar.gz + GitHub push + lokal ham veri sil (§6) ────────────────
+# ── Faz sonu: tar.gz → Drive yükle → ham veri sil (§6) ──────────────────────
 phase_commit() {
     local faz_n="$1"
     local tag="faz${faz_n}_$(date +%Y%m%d_%H%M)"
     local archive="${tag}.tar.gz"
+    local EXT_DISK="/media/eren/Yeni Birim"
+    local DRIVE_TARGET="/run/user/$(id -u)/gvfs/google-drive:host=gmail.com,user=ern0erdm/0AHy_38qW5E5ZUk9PVA/15HWhaLlXJSyftiG67aKScdxklklXri1_/1KmNe8rXwkcomOWigSu96PqvzDdgYplKc"
 
     log "[FAZ-SON §6] Faz $faz_n arşivleniyor → ${archive}"
     oplog "PHASE-COMMIT: Faz${faz_n} arşivleniyor"
 
-    tar -czf "$archive" "results_faz${faz_n}/" "logs_faz${faz_n}/" 2>/dev/null || true
+    # §6a  tar.gz oluştur (SSD'ye — hızlı)
+    tar -czf "$archive" "results_faz${faz_n}/" "logs_faz${faz_n}/" 2>/dev/null
+    local tar_exit=$?
+    local archive_size
+    archive_size=$(du -sh "$archive" 2>/dev/null | cut -f1 || echo "?")
+    local archive_bytes
+    archive_bytes=$(stat -c%s "$archive" 2>/dev/null || echo 0)
 
-    # §6b  GitHub push (scripts + ini — grafik sonra eklenir)
+    if [[ $tar_exit -ne 0 || $archive_bytes -lt 1048576 ]]; then
+        log "[HATA] tar.gz oluşturulamadı veya çok küçük (${archive_size}) — ham SCA Yeni Birim'de KORUNUYOR, phase_commit iptal!"
+        oplog "PHASE-COMMIT: Faz${faz_n} TAR HATASI — ham SCA silinmedi"
+        rm -f "$archive" 2>/dev/null
+        return 1
+    fi
+    log "[TAR] ${archive} oluşturuldu (${archive_size})"
+
+    # §6b  GitHub push
     if git -C "$PROJ_DIR" rev-parse --git-dir &>/dev/null; then
         git -C "$PROJ_DIR" add omnetpp.ini master_autorun.sh \
             resource_engine.sh telemetri.sh generate_7faz_ini.py \
@@ -209,31 +225,37 @@ phase_commit() {
             || log "[WARN] git push başarısız"
     fi
 
-    # §6c  Ham SCA/log verilerini sil (tar.gz'de yedeklendi)
-    local disk_pct
-    disk_pct=$(df "$PROJ_DIR" | tail -1 | awk '{print int($5)}')
-    log "[DISK] Kullanım: %${disk_pct} — ham veriler siliniyor (${archive} yedek)"
-    rm -rf "results_faz${faz_n}/" "logs_faz${faz_n}/"
-    oplog "DISK-CLEAN: results_faz${faz_n} silindi, disk %${disk_pct}"
-
-    # §6d  Grafik üretimi arka planda — sonraki faz simülasyonuyla paralel çalışır
-    local graph_dir="${PROJ_DIR}/graphs/faz${faz_n}"
-    log "[ANALIZ] Faz ${faz_n} grafikleri arka planda başlatılıyor…"
-    (
-        # Analiz için arşivden çıkartmak yerine tar.gz'den doğrudan çalış
-        # (ham veri silindi, SCA yoksa text_summary üretir → geç log'a yazar)
-        python3 "${PROJ_DIR}/analiz_faz.py" --faz "$faz_n" \
-            --out "${PROJ_DIR}/graphs" >> "$MASTER_LOG" 2>&1
-        if [[ -d "${graph_dir}" && "$(ls -A "${graph_dir}" 2>/dev/null)" ]]; then
-            git -C "$PROJ_DIR" add "graphs/faz${faz_n}/" 2>/dev/null || true
-            git -C "$PROJ_DIR" commit -m \
-                "Arazi1 Faz${faz_n} grafikleri eklendi — $(date '+%F %T')" \
-                --quiet 2>/dev/null || true
-            git -C "$PROJ_DIR" push origin main --quiet 2>/dev/null || true
-            log "[ANALIZ] Faz ${faz_n} grafik push OK → graphs/faz${faz_n}/"
+    # §6c  Google Drive'a yükle → başarılıysa SSD'den sil
+    if [[ -f "$archive" ]]; then
+        log "[DRIVE] Drive bağlantısı kontrol ediliyor..."
+        if ls "$DRIVE_TARGET/" &>/dev/null; then
+            log "[DRIVE] Yükleniyor: ${archive} (${archive_size}) ..."
+            if cp "$archive" "$DRIVE_TARGET/$archive"; then
+                log "[DRIVE] ✓ Yükleme OK: ${archive} → Drive"
+                rm -f "$archive"
+                log "[DRIVE] Lokal tar.gz SSD'den silindi"
+                oplog "DRIVE-UPLOAD: Faz${faz_n} → Drive OK"
+            else
+                log "[WARN] Drive yükleme BAŞARISIZ — ${archive} SSD'de korunuyor (drive_upload.sh devam eder)"
+                oplog "DRIVE-UPLOAD: Faz${faz_n} BAŞARISIZ — retry bekleniyor"
+            fi
+        else
+            log "[WARN] Drive erişilemiyor — ${archive} SSD'de korunuyor (drive_upload.sh devam eder)"
+            oplog "DRIVE-UPLOAD: Faz${faz_n} BEKLEMEDE — Drive bağlı değil"
         fi
-    ) &
-    disown
+    fi
+
+    # §6d  Ham SCA/log verilerini Yeni Birim'den sil
+    # (buraya sadece tar.gz başarıyla oluşturulduysa gelinir — §6a return 1 ile korur)
+    log "[DISK] Ham veriler Yeni Birim'den siliniyor (tar.gz güvende)..."
+    find "$EXT_DISK/results_faz${faz_n}" -mindepth 1 -delete 2>/dev/null || true
+    find "$EXT_DISK/logs_faz${faz_n}"    -mindepth 1 -delete 2>/dev/null || true
+    local ext_pct
+    ext_pct=$(df "$EXT_DISK" | tail -1 | awk '{print int($5)}')
+    local ssd_pct
+    ssd_pct=$(df "$PROJ_DIR" | tail -1 | awk '{print int($5)}')
+    log "[DISK] Silme sonrası → SSD: %${ssd_pct} | Yeni Birim: %${ext_pct}"
+    oplog "DISK-CLEAN: results_faz${faz_n} Yeni Birim'den silindi"
 }
 
 # ── Config listesini ini'den çek ──────────────────────────────────────────────
